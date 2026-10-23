@@ -236,6 +236,20 @@ pub struct TrackTags {
     pub lyrics: String,
 }
 
+/// What a local file's own bytes say about it, read straight from the file rather than from
+/// any catalogue. `None` fields are properties the container does not carry.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioInfo {
+    /// The container, from the file's own extension: `FLAC`, `MP3`, `WAV`, `M4A`…
+    pub format: String,
+    pub sample_rate: Option<u32>,
+    pub bit_depth: Option<u8>,
+    pub channels: Option<u8>,
+    pub bitrate_kbps: Option<u32>,
+    pub size_bytes: u64,
+    pub path: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlaylistDetail {
     pub playlist: Playlist,

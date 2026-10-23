@@ -20,7 +20,7 @@ use ui::{
 };
 
 use crate::chrome::{Aside, TitleBarOptions};
-use crate::shared::menus::ItemMenu;
+use crate::shared::menus::{ItemMenu, lyrics_options, upward};
 use crate::shared::transport::{NOTCH, like, moved, percent, transport, volume_icon};
 use crate::shared::veil::{Edge, veil};
 use crate::shared::visualizer::VisualizerDrive;
@@ -94,6 +94,7 @@ pub struct FullscreenView {
     revision: usize,
     track_menu: ItemMenu,
     context_menu: Option<(music::Track, Point<Pixels>)>,
+    lyrics_menu: Option<Point<Pixels>>,
     last_moved: Instant,
     last_pos: Option<Point<Pixels>>,
     inside: bool,
@@ -146,6 +147,7 @@ impl FullscreenView {
             revision: 0,
             track_menu: ItemMenu::new(playlist_scrollbar, cx),
             context_menu: None,
+            lyrics_menu: None,
             last_moved: Instant::now(),
             last_pos: None,
             inside: true,
@@ -790,6 +792,10 @@ impl FullscreenView {
             }
             cx.notify();
         });
+        let lyrics_context = cx.listener(|this, event: &MouseDownEvent, _, cx| {
+            this.lyrics_menu = Some(upward(event.position));
+            cx.notify();
+        });
         let tab = move |id: &'static str, icon: &'static str, hint: &'static str, panel| {
             let showing = self.panel == panel;
 
@@ -828,7 +834,8 @@ impl FullscreenView {
                             "icons/mic-vocal.svg",
                             "lyrics-title",
                             Some(SideTab::Lyrics),
-                        ),
+                        )
+                        .on_mouse_down(MouseButton::Right, lyrics_context),
                         tab(
                             "fullscreen-queue",
                             "icons/list-music.svg",
@@ -969,6 +976,17 @@ impl FullscreenView {
                     .top(px(SINK) * hide)
                     .child(self.pill(cx)),
             )
+    }
+
+    fn lyrics_popup(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let position = self.lyrics_menu?;
+
+        Some(
+            Popup::new(position, lyrics_options(cx)).on_close(cx.listener(|this, _, _, cx| {
+                this.lyrics_menu = None;
+                cx.notify();
+            })),
+        )
     }
 
     fn menu(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
@@ -1262,6 +1280,7 @@ impl Render for FullscreenView {
             })
             .when(idle < 1., |this| this.child(self.leave(idle, window, cx)))
             .children(self.menu(cx))
+            .children(self.lyrics_popup(cx))
     }
 }
 

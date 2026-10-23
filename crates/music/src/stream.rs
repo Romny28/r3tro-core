@@ -660,7 +660,7 @@ impl<B: Body> Seek for Reader<B> {
 fn spool_file() -> io::Result<File> {
     let folder = dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("sonora");
+        .join("r3tro-core");
     std::fs::create_dir_all(&folder)?;
     tempfile::tempfile_in(folder)
 }

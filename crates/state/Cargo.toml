@@ -40,6 +40,7 @@ mpris-server.workspace = true
 souvlaki.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+raw-window-handle.workspace = true
 windows-sys.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]

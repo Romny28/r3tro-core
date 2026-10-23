@@ -111,7 +111,7 @@ pub use tabs::{TabBar, Tabs};
 pub use theme::{
     ActiveTheme, BACKDROP_TRANSPARENCY, CoverFill, Look, MAX_FONT, MAX_LYRICS_SCALE,
     MAX_TRANSPARENCY, MIN_FONT, MIN_LYRICS_SCALE, Theme, ThemeKind, ThemeOverrides, WINDOW_BLUR,
-    backdrop,
+    accent_overlay, backdrop, cover_accent,
 };
 pub use time::{clock, runtime, tabular};
 pub use toast::Toast;

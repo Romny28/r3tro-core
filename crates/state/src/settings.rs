@@ -42,6 +42,7 @@ use crate::{Outcome, Repeat, Sonora, Toasts};
 pub enum DiscordName {
     #[default]
     Sonora,
+    SonoraProvider,
     Provider,
     Music,
     Title,
@@ -50,8 +51,9 @@ pub enum DiscordName {
 }
 
 impl DiscordName {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Sonora,
+        Self::SonoraProvider,
         Self::Provider,
         Self::Music,
         Self::Title,
@@ -62,6 +64,7 @@ impl DiscordName {
     pub fn id(self) -> &'static str {
         match self {
             Self::Sonora => "sonora",
+            Self::SonoraProvider => "sonora-provider",
             Self::Provider => "provider",
             Self::Music => "music",
             Self::Title => "title",
@@ -73,6 +76,7 @@ impl DiscordName {
     pub fn key(self) -> &'static str {
         match self {
             Self::Sonora => "settings-discord-name-sonora",
+            Self::SonoraProvider => "settings-discord-name-sonora-provider",
             Self::Provider => "settings-discord-name-provider",
             Self::Music => "settings-discord-name-music",
             Self::Title => "settings-discord-name-title",
@@ -278,6 +282,13 @@ struct Values {
     /// Per band gains in decibels, lowest band first. Kept even while `equalizer` is off, so
     /// turning it back on restores the curve.
     equalizer_bands: Vec<f32>,
+    exclusive_mode: String,
+    hide_profanity: bool,
+    accent: String,
+    profile_greeting: String,
+    track_notifications: bool,
+    track_notification_seconds: u32,
+    track_notification_position: String,
     sleep_timer: bool,
     discord_presence: bool,
     discord_name: DiscordName,
@@ -425,6 +436,13 @@ impl Default for Values {
             gapless: true,
             equalizer: false,
             equalizer_bands: vec![0.; equalizer::BANDS],
+            exclusive_mode: music::ExclusiveMode::default().id().to_owned(),
+            hide_profanity: false,
+            accent: String::new(),
+            profile_greeting: String::new(),
+            track_notifications: true,
+            track_notification_seconds: 4,
+            track_notification_position: NoticePosition::default().id().to_owned(),
             sleep_timer: false,
             discord_presence: false,
             discord_name: DiscordName::Sonora,
@@ -637,6 +655,9 @@ pub struct AppSettings {
     /// The watch on the config folder. Dropping it ends the watch.
     watcher: Option<RecommendedWatcher>,
     reload: Option<Task<()>>,
+    /// The profile R3TRØ CORE shares with any other R3TRO COMPANY app. It lives only in its own
+    /// file, never in `settings.json`.
+    shared_profile: crate::shared_profile::SharedProfile,
 }
 
 /// Emitted after settings reload or the selected custom palette changes.
@@ -695,6 +716,7 @@ impl AppSettings {
             broken,
             watcher: None,
             reload: None,
+            shared_profile: crate::shared_profile::read(),
         }
     }
 
@@ -725,6 +747,59 @@ impl AppSettings {
 
     pub fn equalizer(&self) -> bool {
         self.values.equalizer
+    }
+
+    pub fn exclusive_mode(&self) -> music::ExclusiveMode {
+        music::ExclusiveMode::from_id(&self.values.exclusive_mode)
+    }
+
+    pub fn hide_profanity(&self) -> bool {
+        self.values.hide_profanity
+    }
+
+    pub fn accent(&self) -> &str {
+        &self.values.accent
+    }
+
+    pub fn profile_name(&self) -> &str {
+        &self.shared_profile.name
+    }
+
+    /// The absolute path to the shared avatar picture, empty when there is none.
+    pub fn profile_avatar(&self) -> String {
+        crate::shared_profile::picture_path(&self.shared_profile.avatar)
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    }
+
+    /// The absolute path to the shared background picture, empty when there is none.
+    pub fn profile_background(&self) -> String {
+        crate::shared_profile::picture_path(&self.shared_profile.background)
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    }
+
+    pub fn profile_greeting(&self) -> &str {
+        &self.values.profile_greeting
+    }
+
+    pub fn track_notifications(&self) -> bool {
+        self.values.track_notifications
+    }
+
+    /// How long the track notice stays up, clamped to something that is always visible yet
+    /// never lingers: at least half a second, at most thirty.
+    pub fn track_notification_seconds(&self) -> u32 {
+        self.values.track_notification_seconds.clamp(1, 30)
+    }
+
+    pub fn track_notification_position(&self) -> NoticePosition {
+        NoticePosition::from_id(&self.values.track_notification_position)
+    }
+
+    /// Whether the accent follows the colours of the playing cover.
+    pub fn cover_accent(&self) -> bool {
+        self.values.accent == "auto"
     }
 
     /// The stored curve, padded flat or cut to the band count and clamped into range, so a file
@@ -1075,11 +1150,16 @@ impl AppSettings {
     /// Combines the selected theme file with legacy overrides from `settings.json`.
     pub fn theme_overrides(&self) -> ThemeOverrides {
         let inline = &self.values.appearance.theme_overrides;
-        self.themes
+        let base = self
+            .themes
             .iter()
             .find(|theme| theme.id == self.theme())
             .map(|theme| theme.theme.clone().merged(inline))
-            .unwrap_or_else(|| inline.clone())
+            .unwrap_or_else(|| inline.clone());
+        match ui::accent_overlay(&self.values.accent) {
+            Some(overlay) => base.merged(&overlay),
+            None => base,
+        }
     }
 
     /// Creates and returns the folder that holds custom themes.
@@ -1111,6 +1191,94 @@ impl AppSettings {
 
     pub fn set_gapless(&mut self, gapless: bool, cx: &mut Context<Self>) {
         self.values.gapless = gapless;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_exclusive_mode(&mut self, mode: music::ExclusiveMode, cx: &mut Context<Self>) {
+        self.values.exclusive_mode = mode.id().to_owned();
+        music::set_exclusive_mode(mode);
+        self.schedule_save(cx);
+    }
+
+    pub fn set_accent(&mut self, accent: String, cx: &mut Context<Self>) {
+        if self.values.accent == accent {
+            return;
+        }
+        self.values.accent = accent;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_profile_name(&mut self, name: String, cx: &mut Context<Self>) {
+        if self.shared_profile.name == name {
+            return;
+        }
+        self.shared_profile.name = name;
+        crate::shared_profile::write(&self.shared_profile);
+        cx.notify();
+    }
+
+    pub fn set_profile_avatar(&mut self, path: String, cx: &mut Context<Self>) {
+        match path.is_empty() {
+            true => self.shared_profile.avatar.clear(),
+            false => {
+                let Some(adopted) =
+                    crate::shared_profile::adopt_picture(std::path::Path::new(&path), "avatar")
+                else {
+                    return;
+                };
+                self.shared_profile.avatar = adopted;
+            }
+        }
+        crate::shared_profile::write(&self.shared_profile);
+        cx.notify();
+    }
+
+    pub fn set_track_notifications(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.values.track_notifications = on;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_track_notification_seconds(&mut self, seconds: u32, cx: &mut Context<Self>) {
+        self.values.track_notification_seconds = seconds.clamp(1, 30);
+        self.schedule_save(cx);
+    }
+
+    pub fn set_track_notification_position(
+        &mut self,
+        position: NoticePosition,
+        cx: &mut Context<Self>,
+    ) {
+        self.values.track_notification_position = position.id().to_owned();
+        self.schedule_save(cx);
+    }
+
+    pub fn set_profile_greeting(&mut self, text: String, cx: &mut Context<Self>) {
+        if self.values.profile_greeting == text {
+            return;
+        }
+        self.values.profile_greeting = text;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_profile_background(&mut self, path: String, cx: &mut Context<Self>) {
+        match path.is_empty() {
+            true => self.shared_profile.background.clear(),
+            false => {
+                let Some(adopted) = crate::shared_profile::adopt_picture(
+                    std::path::Path::new(&path),
+                    "background",
+                ) else {
+                    return;
+                };
+                self.shared_profile.background = adopted;
+            }
+        }
+        crate::shared_profile::write(&self.shared_profile);
+        cx.notify();
+    }
+
+    pub fn set_hide_profanity(&mut self, hidden: bool, cx: &mut Context<Self>) {
+        self.values.hide_profanity = hidden;
         self.schedule_save(cx);
     }
 
@@ -2218,6 +2386,47 @@ fn parse_theme(bytes: &[u8], path: &Path, id: &str) -> Result<CustomTheme> {
     })
 }
 
+/// Where the track notice sits on screen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NoticePosition {
+    TopLeft,
+    TopRight,
+    #[default]
+    BottomRight,
+    BottomLeft,
+    Center,
+}
+
+impl NoticePosition {
+    pub const ALL: [Self; 5] = [
+        Self::TopLeft,
+        Self::TopRight,
+        Self::BottomRight,
+        Self::BottomLeft,
+        Self::Center,
+    ];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::TopLeft => "top-left",
+            Self::TopRight => "top-right",
+            Self::BottomRight => "bottom-right",
+            Self::BottomLeft => "bottom-left",
+            Self::Center => "center",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Self {
+        match id {
+            "top-left" => Self::TopLeft,
+            "top-right" => Self::TopRight,
+            "bottom-left" => Self::BottomLeft,
+            "center" => Self::Center,
+            _ => Self::BottomRight,
+        }
+    }
+}
+
 fn themes_path(settings: &Path) -> PathBuf {
     settings
         .parent()
@@ -2326,7 +2535,7 @@ fn absolute_path(path: &Path) -> PathBuf {
 fn settings_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("sonora")
+        .join("r3tro-core")
         .join("settings.json")
 }
 

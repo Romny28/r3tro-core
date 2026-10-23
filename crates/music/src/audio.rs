@@ -1,5 +1,5 @@
 use std::num::NonZero;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
@@ -10,6 +10,80 @@ use rodio::{DeviceSinkBuilder, MixerDeviceSink, Source};
 
 use crate::equalizer::{Equalized, Equalizer};
 use crate::spectrum::{Spectrum, Tap};
+
+#[cfg(windows)]
+mod exclusive;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExclusiveMode {
+    Off,
+    #[default]
+    Auto,
+    Always,
+}
+
+impl ExclusiveMode {
+    pub const ALL: [Self; 3] = [Self::Off, Self::Auto, Self::Always];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Auto => "auto",
+            Self::Always => "always",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Self {
+        match id {
+            "off" => Self::Off,
+            "always" => Self::Always,
+            _ => Self::Auto,
+        }
+    }
+
+    fn code(self) -> u8 {
+        match self {
+            Self::Off => 0,
+            Self::Auto => 1,
+            Self::Always => 2,
+        }
+    }
+
+    fn from_code(code: u8) -> Self {
+        match code {
+            0 => Self::Off,
+            2 => Self::Always,
+            _ => Self::Auto,
+        }
+    }
+}
+
+static EXCLUSIVE_MODE: AtomicU8 = AtomicU8::new(0);
+/// Whether the output now playing is the exclusive, bit-perfect one. Sonic code such as the
+/// equalizer reads this directly; it is cheaper than threading the flag through every call.
+static EXCLUSIVE_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Whether sound is leaving the device untouched by the system mixer right now.
+pub fn exclusive_active() -> bool {
+    EXCLUSIVE_ACTIVE.load(Ordering::Relaxed)
+}
+
+pub fn set_exclusive_mode(mode: ExclusiveMode) {
+    EXCLUSIVE_MODE.store(mode.code(), Ordering::Relaxed);
+}
+
+/// Whether audio from `source` should take the device exclusively: never in `Off`, always in
+/// `Always`, and in `Auto` for every source but YouTube, whose audio is compressed anyway.
+pub fn exclusive_for(source: &str) -> bool {
+    if !cfg!(windows) {
+        return false;
+    }
+    match ExclusiveMode::from_code(EXCLUSIVE_MODE.load(Ordering::Relaxed)) {
+        ExclusiveMode::Off => false,
+        ExclusiveMode::Always => true,
+        ExclusiveMode::Auto => source != "youtube",
+    }
+}
 
 pub const RAMP: Duration = Duration::from_millis(25);
 const BUFFER: Duration = Duration::from_millis(50);
@@ -44,16 +118,24 @@ pub struct Chain {
     pub spectrum: Spectrum,
 }
 
+enum Stream {
+    Shared(MixerDeviceSink),
+    #[cfg(windows)]
+    Exclusive(exclusive::Exclusive),
+}
+
 /// One open stream on an output device, with the mixer the engines' chains play into.
 struct Device {
     id: String,
     /// The rate the stream was opened for, whether or not the device could honour it.
     wanted: Option<u32>,
     rate: u32,
+    /// Whether the stream was opened asking for exclusive access, whether or not it got it.
+    exclusive: bool,
     failed: Arc<AtomicBool>,
     /// Taken when an output reopens the device at another rate, which closes the stream under
     /// every output still on it.
-    stream: Mutex<Option<MixerDeviceSink>>,
+    stream: Mutex<Option<Stream>>,
 }
 
 impl Device {
@@ -61,7 +143,7 @@ impl Device {
     /// stream when no output holds a healthy one there at that rate, closing the old stream on
     /// the same device first. A stream left on a device that is no longer the default stays with
     /// the outputs still using it until they reopen.
-    fn shared(rate: Option<u32>) -> Result<Arc<Self>> {
+    fn shared(rate: Option<u32>, exclusive: bool) -> Result<Arc<Self>> {
         let device = cpal::default_host()
             .default_output_device()
             .context("no audio output device")?;
@@ -71,7 +153,7 @@ impl Device {
         let current = shared.upgrade().filter(|open| open.id == id);
         if let Some(open) = &current
             && open.live()
-            && rate.is_none_or(|rate| open.fits(rate))
+            && rate.is_none_or(|rate| open.fits(rate, exclusive))
         {
             return Ok(open.clone());
         }
@@ -79,13 +161,36 @@ impl Device {
             open.close();
         }
 
-        let open = Arc::new(Self::open(device, id, rate)?);
+        let open = Arc::new(Self::open(device, id, rate, exclusive)?);
         *shared = Arc::downgrade(&open);
         Ok(open)
     }
 
     /// Opens the device at `rate` when it offers that rate and at its default otherwise.
-    fn open(device: cpal::Device, id: String, rate: Option<u32>) -> Result<Self> {
+    fn open(device: cpal::Device, id: String, rate: Option<u32>, exclusive: bool) -> Result<Self> {
+        #[cfg(windows)]
+        if let Some(rate) = rate.filter(|_| exclusive) {
+            let failed = Arc::new(AtomicBool::new(false));
+            match exclusive::Exclusive::open(rate, failed.clone()) {
+                Ok(stream) => {
+                    log::info!("sink: exclusive output on {id} at {rate} Hz");
+                    EXCLUSIVE_ACTIVE.store(true, Ordering::Relaxed);
+                    return Ok(Self {
+                        id,
+                        wanted: Some(rate),
+                        rate,
+                        exclusive,
+                        failed,
+                        stream: Mutex::new(Some(Stream::Exclusive(stream))),
+                    });
+                }
+                Err(error) => {
+                    log::warn!("sink: exclusive output unavailable, using shared mode: {error:#}");
+                }
+            }
+        }
+        EXCLUSIVE_ACTIVE.store(false, Ordering::Relaxed);
+
         let default = device
             .default_output_config()
             .map_err(|error| anyhow::anyhow!("cannot read the output config: {error}"))?;
@@ -130,15 +235,27 @@ impl Device {
             id,
             wanted: rate,
             rate: config.sample_rate(),
+            exclusive,
             failed,
-            stream: Mutex::new(Some(stream)),
+            stream: Mutex::new(Some(Stream::Shared(stream))),
         })
     }
 
     /// Whether a track at `rate` can play on this stream without a reopen. A rate the device
     /// turned down counts as fitting, so the output does not retry it on every track.
-    fn fits(&self, rate: u32) -> bool {
-        rate == self.rate || self.wanted == Some(rate)
+    fn fits(&self, rate: u32, exclusive: bool) -> bool {
+        self.exclusive == exclusive && (rate == self.rate || self.wanted == Some(rate))
+    }
+
+    fn is_exclusive(&self) -> bool {
+        #[cfg(windows)]
+        {
+            matches!(self.stream().as_ref(), Some(Stream::Exclusive(_)))
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
     }
 
     /// Whether the stream is still open and has reported no error.
@@ -152,12 +269,15 @@ impl Device {
 
     /// Puts one engine's chain into the mixer. A stream that has closed drops it.
     fn add(&self, source: impl Source + Send + 'static) {
-        if let Some(stream) = self.stream().as_ref() {
-            stream.mixer().add(source);
+        match self.stream().as_ref() {
+            Some(Stream::Shared(stream)) => stream.mixer().add(source),
+            #[cfg(windows)]
+            Some(Stream::Exclusive(stream)) => stream.add(source),
+            None => {}
         }
     }
 
-    fn stream(&self) -> MutexGuard<'_, Option<MixerDeviceSink>> {
+    fn stream(&self) -> MutexGuard<'_, Option<Stream>> {
         self.stream.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -176,7 +296,7 @@ impl Output {
     /// Joins the stream on the default output device at whatever rate it runs and runs every
     /// sample through the equalizer and then the volume ramp before it reaches the mixer.
     pub fn open(chain: Chain) -> Result<Self> {
-        let device = Device::shared(None)?;
+        let device = Device::shared(None, false)?;
         let sink = attach(&chain, &device);
         Ok(Self {
             chain,
@@ -191,8 +311,19 @@ impl Output {
     }
 
     /// Whether a track at `rate` can go out as the output stands, without `fit` reopening it.
-    pub fn fits(&self, rate: u32) -> bool {
-        self.device.live() && self.device.fits(rate)
+    pub fn fits(&self, rate: u32, exclusive: bool) -> bool {
+        self.device.live() && self.device.fits(rate, exclusive)
+    }
+
+    /// Whether this output holds the device exclusively right now.
+    pub fn exclusive(&self) -> bool {
+        self.device.is_exclusive()
+    }
+
+    /// Lets go of the device so other programs can use it. The output counts as failed from
+    /// here, so the engine reopens it when playback resumes.
+    pub fn release(&self) {
+        self.device.close();
     }
 
     /// Moves this output onto a shared stream at `rate` unless it `fits` already, keeping the
@@ -200,12 +331,12 @@ impl Output {
     /// it under the other engines. Whatever this output had queued is dropped and any clone of
     /// `sink` goes stale, so callers do this before a track and take `sink` again when it
     /// returns true.
-    pub fn fit(&mut self, rate: u32) -> Result<bool> {
-        if self.fits(rate) {
+    pub fn fit(&mut self, rate: u32, exclusive: bool) -> Result<bool> {
+        if self.fits(rate, exclusive) {
             return Ok(false);
         }
         let paused = self.sink.is_paused();
-        let device = match Device::shared(Some(rate)) {
+        let device = match Device::shared(Some(rate), exclusive) {
             Ok(device) => device,
             Err(error) => {
                 self.broken = true;

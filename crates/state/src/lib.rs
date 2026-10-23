@@ -12,6 +12,8 @@ mod logging;
 mod lyrics;
 mod mosaic;
 mod network;
+mod notice;
+mod shared_profile;
 mod pins;
 mod playback;
 mod potoken;
@@ -46,6 +48,7 @@ pub use library::{
 pub use logging::log_file;
 pub use lyrics::{Lyrics, LyricsState};
 pub use network::{Network, Reconnected};
+pub use notice::TrackNotice;
 pub use pins::{PinSort, Pins};
 pub use playback::{Origin, Playback, PlaybackState, Repeat, Sleep, Whence};
 pub use profile::Profile;
@@ -56,6 +59,7 @@ pub use scrobble::{ScrobbleRow, ScrobbleState, Scrobbling};
 pub use search::{AlbumHit, ArtistHit, Hit, Kind, PlaylistHit, Search};
 pub use session::{Failure, ProviderInfo, Session, SessionEvent, SessionState};
 pub use settings::{
+    NoticePosition,
     AppSettings, DiscordName, FilterValue, FullscreenControlsAutohide, Reloaded,
     RomanizationScripts, SYSTEM_FONT, SideTab, remember_window, window_placement,
 };
@@ -172,6 +176,9 @@ pub struct Sonora {
     pub network: Entity<Network>,
     pub pins: Entity<Pins>,
     pub playback: Entity<Playback>,
+    /// Shows a small window for a few seconds whenever a new track starts. Nothing reads it; it
+    /// is held so the subscription behind it keeps ticking.
+    pub track_notice: Entity<TrackNotice>,
     /// The window that mints YouTube's proof-of-origin token. Nothing reads it; it is held so
     /// that it keeps ticking.
     pub potoken: Entity<potoken::PoToken>,
@@ -231,6 +238,8 @@ pub fn init(
             cx,
         )
     });
+    let track_notice =
+        cx.new(|cx| TrackNotice::new(playback.clone(), session.clone(), settings.clone(), cx));
     let scan = cx.new(|cx| Scan::new(session.clone(), cx));
     let scrobbling = cx.new(|cx| {
         Scrobbling::new(
@@ -279,6 +288,7 @@ pub fn init(
         pins,
         playback,
         potoken,
+        track_notice,
         queue,
         scan,
         scrobbling,

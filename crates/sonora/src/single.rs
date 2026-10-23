@@ -7,8 +7,8 @@ use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Name, Strea
 use tokio::sync::mpsc::UnboundedSender;
 
 const SOCKET: &str = match cfg!(debug_assertions) {
-    true => "sonora-dev.sock",
-    false => "sonora.sock",
+    true => "r3tro-core-dev.sock",
+    false => "r3tro-core.sock",
 };
 
 pub enum Instance {

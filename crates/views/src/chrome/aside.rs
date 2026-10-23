@@ -265,6 +265,7 @@ pub(crate) struct Aside {
     pinned: bool,
     nudged: Option<std::time::Instant>,
     verse_of: Option<String>,
+    lyrics_masked: bool,
     verse_take: u64,
     placing: bool,
     context_menu: Option<ContextMenuState>,
@@ -359,6 +360,7 @@ impl Aside {
             pinned: true,
             nudged: None,
             verse_of: None,
+            lyrics_masked: false,
             verse_take: 0,
             placing: false,
             context_menu: None,
@@ -962,7 +964,14 @@ impl Aside {
         let singing = matches!(self.playback.read(cx).state(), PlaybackState::Playing);
         let lyrics = self.lyrics.read(cx);
         let state = lyrics.state().clone();
-        let shown = lyrics.current().map(|hit| hit.lyrics.clone());
+        let hide_profanity = self.settings.read(cx).hide_profanity();
+        let shown = lyrics
+            .current()
+            .map(|hit| hit.lyrics.clone())
+            .map(|sheet| match hide_profanity {
+                true => music::profanity::masked(&sheet),
+                false => sheet,
+            });
         let credit = lyrics
             .current()
             .map(|hit| (hit.source, hit.writers.clone()));
@@ -993,6 +1002,10 @@ impl Aside {
             from: gpui::point(0., 0.5),
         };
 
+        if self.lyrics_masked != hide_profanity {
+            self.lyrics_masked = hide_profanity;
+            self.forget_measurements();
+        }
         if self.verse_of != following {
             self.verse_of = following;
             self.verse_take = take;

@@ -471,6 +471,7 @@ impl Playback {
         let level = settings.read(cx).volume();
         let normalisation = settings.read(cx).normalisation();
         let gapless = settings.read(cx).gapless();
+        music::set_exclusive_mode(settings.read(cx).exclusive_mode());
         let equalizer = Equalizer::new(
             settings.read(cx).equalizer(),
             &settings.read(cx).equalizer_gains(),

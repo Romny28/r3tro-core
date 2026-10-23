@@ -567,6 +567,10 @@ pub fn track_from_file(
             .and_then(|fb| release_type(fb.release.iter().map(String::as_str), fb.compilation)),
     };
 
+    let genres = tag
+        .map(|tag| clean_multiple(tag.get_strings(ItemKey::Genre)))
+        .unwrap_or_default();
+
     Some(Tagged {
         track: Track {
             id: Some(track_id(path)),
@@ -585,7 +589,7 @@ pub fn track_from_file(
             explicit: false,
             track_number,
             disc_number,
-            tags: Vec::new(),
+            tags: genres,
             languages: Vec::new(),
             credits: Vec::new(),
         },

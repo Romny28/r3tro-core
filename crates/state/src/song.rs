@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use gpui::{Context, Entity, Task};
-use music::{AlbumDetail, ArtistProfile, Track};
+use music::{AlbumDetail, ArtistProfile, AudioInfo, Track, TrackTags};
 use tokio::task::AbortHandle;
 
 use crate::catalog::SongPage;
@@ -17,6 +17,9 @@ pub struct SongDetail {
     io: Io,
     task: Option<Task<()>>,
     request: Option<AbortHandle>,
+    audio_info: Option<AudioInfo>,
+    local_tags: Option<TrackTags>,
+    audio_task: Option<Task<()>>,
 }
 
 impl SongDetail {
@@ -50,6 +53,9 @@ impl SongDetail {
             io,
             task: None,
             request: None,
+            audio_info: None,
+            local_tags: None,
+            audio_task: None,
         }
     }
 
@@ -82,6 +88,18 @@ impl SongDetail {
         self.error.as_deref()
     }
 
+    /// The real format, sample rate, bit depth and file size, read from a local file's own
+    /// bytes. `None` for anything streamed, or while the read is still in flight.
+    pub fn audio_info(&self) -> Option<&AudioInfo> {
+        self.audio_info.as_ref()
+    }
+
+    /// A local file's own tags, for the facts a streaming catalogue has no local equivalent
+    /// for: release year, genre, label.
+    pub fn local_tags(&self) -> Option<&TrackTags> {
+        self.local_tags.as_ref()
+    }
+
     pub fn open(&mut self, id: &str, cx: &mut Context<Self>) {
         if self.id.as_deref() == Some(id) && (self.loading || self.page.is_some()) {
             return;
@@ -101,6 +119,28 @@ impl SongDetail {
         self.loading = true;
         cx.notify();
         let id = id.to_owned();
+        if music::is_local_id(&id) {
+            let probed = id.clone();
+            let probed_for = id.clone();
+            let probe = self.io.spawn_blocking(move || {
+                (
+                    music::local::audio_info(&probed),
+                    music::local::track_tags(&probed),
+                )
+            });
+            self.audio_task = Some(cx.spawn(async move |this, cx| {
+                let (info, tags) = probe.await.unwrap_or((None, None));
+                this.update(cx, |this, cx| {
+                    if this.id.as_deref() != Some(probed_for.as_str()) {
+                        return;
+                    }
+                    this.audio_info = info;
+                    this.local_tags = tags;
+                    cx.notify();
+                })
+                .ok();
+            }));
+        }
         let request = self.io.spawn({
             let id = id.clone();
             async move { catalog.song(&id).await }
@@ -126,6 +166,7 @@ impl SongDetail {
 
     fn clear(&mut self) {
         self.task = None;
+        self.audio_task = None;
         if let Some(request) = self.request.take() {
             request.abort();
         }
@@ -133,6 +174,8 @@ impl SongDetail {
         self.page = None;
         self.loading = false;
         self.error = None;
+        self.audio_info = None;
+        self.local_tags = None;
     }
 }
 

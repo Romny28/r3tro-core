@@ -59,7 +59,7 @@ app-refresh-library = Actualizar biblioteca
 app-sign-out = Cerrar sesión
 app-quit = Salir
 app-settings = Ajustes…
-app-hide = Ocultar Sonora
+app-hide = Ocultar R3TRØ CORE
 app-hide-others = Ocultar otros
 app-show-all = Mostrar todo
 app-edit = Edición
@@ -73,7 +73,7 @@ app-minimize = Minimizar
 app-zoom = Zoom
 
 # tray menu
-tray-show = Mostrar Sonora
+tray-show = Mostrar R3TRØ CORE
 tray-play = Reproducir
 tray-pause = Pausar
 
@@ -265,10 +265,10 @@ login-signed-in = Sesión iniciada como { $name }
 login-failed-title = No se pudo iniciar sesión
 login-problem-region = Spotify no abre una sesión desde el país en el que estás. Inicia sesión desde tu país de origen o cambia el país en tu cuenta de Spotify.
 login-problem-credentials = Tu sesión guardada de Spotify ya no es válida. Inicia sesión de nuevo para continuar.
-login-problem-network = Sonora no pudo conectarse con el servicio de música. Revisa tu conexión a internet e inténtalo de nuevo.
+login-problem-network = R3TRØ CORE no pudo conectarse con el servicio de música. Revisa tu conexión a internet e inténtalo de nuevo.
 login-problem-cancelled = Cerraste la página del navegador antes de aprobar el inicio de sesión. Empieza de nuevo para terminar.
 login-problem-refused = Spotify rechazó el inicio de sesión. Espera un momento e inténtalo de nuevo.
-login-problem-premium = Sonora reproduce a través de Spotify Premium y esta cuenta no lo tiene. Inicia sesión con una cuenta Premium para continuar.
+login-problem-premium = R3TRØ CORE reproduce a través de Spotify Premium y esta cuenta no lo tiene. Inicia sesión con una cuenta Premium para continuar.
 login-sign-in = Iniciar sesión con { $provider }
 login-connect-cookies = Pegar las cookies manualmente
 login-cookie-open = Abrir { $provider }
@@ -294,7 +294,7 @@ login-use = Usar { $provider }
 login-guest-title = Modo invitado
 login-guest-use = Usar el modo invitado
 login-guest-detail = Explora y reproduce sin una cuenta. Tu biblioteca, tus favoritos y tus listas quedan fuera de alcance.
-login-usage-consent = Ayúdanos a estimar cuánta gente usa Sonora.
+login-usage-consent = Ayúdanos a estimar cuánta gente usa R3TRØ CORE.
 login-device-code = Introduce este código en { $url }
 login-server-title = Conéctate a tu servidor Subsonic
 login-server-detail = Introduce la dirección de cualquier servidor Subsonic u OpenSubsonic (Navidrome, Airsonic, Gonic, …) e inicia sesión con tu nombre de usuario y contraseña del servidor. La sesión permanece en este dispositivo.
@@ -303,7 +303,7 @@ login-username-hint = Nombre de usuario
 login-password-hint = Contraseña
 login-server-submit = Conectar
 login-account-title = Elige una cuenta
-login-account-detail = Esta sesión tiene iniciada la sesión en más de una cuenta de Google. Elige la que debe usar Sonora.
+login-account-detail = Esta sesión tiene iniciada la sesión en más de una cuenta de Google. Elige la que debe usar R3TRØ CORE.
 
 # album and playlist pages
 detail-playlist = Lista de reproducción
@@ -485,7 +485,7 @@ settings-motion-detail = Omite las animaciones y transiciones de la interfaz
 settings-pace = Velocidad de las animaciones
 settings-pace-detail = La rapidez con la que se reproducen las animaciones de la interfaz
 settings-saver = Ahorro de batería
-settings-saver-detail = Limita la tasa de fotogramas de las animaciones mientras Sonora no está en primer plano, a partir del próximo inicio
+settings-saver-detail = Limita la tasa de fotogramas de las animaciones mientras R3TRØ CORE no está en primer plano, a partir del próximo inicio
 settings-corners = Esquinas
 settings-corners-detail = Cuánto se redondean las superficies y los controles
 settings-blur = Desenfoque de la interfaz
@@ -496,17 +496,17 @@ settings-font = Tamaño del texto
 settings-font-detail = Tamaño base del texto; todo lo demás se escala con él
 settings-font-value = { $size } px
 settings-startup = Mostrar al iniciar
-settings-startup-detail = La pantalla con la que se abre Sonora
+settings-startup-detail = La pantalla con la que se abre R3TRØ CORE
 settings-entries = Secciones de la barra lateral
 settings-entries-detail = Las secciones que aparecen en la barra lateral
 settings-entries-pick = Elegir las secciones
 settings-language = Idioma
-settings-language-detail = El idioma que Sonora usa en toda la interfaz
+settings-language-detail = El idioma que R3TRØ CORE usa en toda la interfaz
 settings-language-system = Sistema
 settings-language-search = Buscar un idioma
 settings-language-none = No se encontraron idiomas
 settings-typeface = Fuente
-settings-typeface-detail = La tipografía que Sonora usa en toda la interfaz
+settings-typeface-detail = La tipografía que R3TRØ CORE usa en toda la interfaz
 settings-typeface-system = Predeterminada
 settings-typeface-search = Buscar una fuente
 settings-typeface-none = No se encontraron fuentes
@@ -522,14 +522,14 @@ settings-window-rounding-detail = El grado de redondeo de las esquinas de la ven
 settings-controls-side = Lado de los controles
 settings-controls-side-detail = El extremo de la barra de título donde se sitúan los controles
 settings-close-to-tray = Mantener en segundo plano
-settings-close-to-tray-detail = Mantiene a Sonora en ejecución y reproduciendo después de cerrar su ventana
+settings-close-to-tray-detail = Mantiene a R3TRØ CORE en ejecución y reproduciendo después de cerrar su ventana
 settings-tray-icon = Mostrar en la bandeja del sistema
 settings-tray-icon-detail = Pone un icono con controles de reproducción en la bandeja del sistema
 settings-discord = Mostrar en Discord
 settings-discord-detail = Muestra la pista que estás escuchando en tu perfil de Discord
 settings-discord-name = Nombre del estado
 settings-discord-name-detail = Cómo se llama el estado, después del Escuchando que ven tus amigos
-settings-discord-name-sonora = Sonora
+settings-discord-name-sonora = R3TRØ CORE
 settings-discord-name-provider = Proveedor
 settings-discord-name-music = Música
 settings-discord-name-title = Título
@@ -561,8 +561,8 @@ settings-sleep-off = Desactivado
 settings-sleep-end-of-track = Fin de pista
 settings-sleep-minutes = { $count } min
 settings-widevine = Módulo Widevine
-settings-widevine-detail = Las pistas de Apple Music están cifradas y necesitan el módulo Widevine de Google. Sonora usa la copia que ya tiene un navegador de este equipo, o una que descargó de Google con tu consentimiento.
-settings-widevine-none = Las pistas de Apple Music están cifradas y necesitan el módulo Widevine de Google. Ningún navegador de este equipo lo tiene, así que Sonora puede descargarlo de Google con tu consentimiento.
+settings-widevine-detail = Las pistas de Apple Music están cifradas y necesitan el módulo Widevine de Google. R3TRØ CORE usa la copia que ya tiene un navegador de este equipo, o una que descargó de Google con tu consentimiento.
+settings-widevine-none = Las pistas de Apple Music están cifradas y necesitan el módulo Widevine de Google. Ningún navegador de este equipo lo tiene, así que R3TRØ CORE puede descargarlo de Google con tu consentimiento.
 settings-widevine-looking = Buscando…
 settings-widevine-asking = Esperando tu respuesta
 settings-widevine-fetching = Descargando…
@@ -574,9 +574,9 @@ settings-widevine-configured = Definido por el entorno
 settings-widevine-fetch = Descargar
 settings-widevine-uninstall = Desinstalar
 confirm-uninstall-widevine-title = ¿Desinstalar el módulo Widevine?
-confirm-uninstall-widevine = Sonora eliminará la copia que descargó de Google. Las pistas de Apple Music dejarán de reproducirse hasta que se vuelva a descargar.
+confirm-uninstall-widevine = R3TRØ CORE eliminará la copia que descargó de Google. Las pistas de Apple Music dejarán de reproducirse hasta que se vuelva a descargar.
 widevine-prompt-title = Módulo Widevine
-widevine-prompt-wanted = Las pistas de Apple Music están cifradas y necesitan el módulo Widevine de Google. Ningún navegador de este equipo lo tiene. Sonora puede descargarlo de los servidores de Google, el mismo archivo que instala Chrome, y guardarlo en su propia carpeta.
+widevine-prompt-wanted = Las pistas de Apple Music están cifradas y necesitan el módulo Widevine de Google. Ningún navegador de este equipo lo tiene. R3TRØ CORE puede descargarlo de los servidores de Google, el mismo archivo que instala Chrome, y guardarlo en su propia carpeta.
 widevine-prompt-downloading = Descargando…
 widevine-prompt-terms = Se descargó la versión { $version }. Instalarlo implica aceptar los términos de Google para el módulo:
 widevine-prompt-installing = Instalando…
@@ -665,12 +665,12 @@ settings-provider-switch = Cambiar a
 settings-sign-out = Cerrar sesión
 settings-group-scrobbling = Scrobbling
 settings-lastfm = Last.fm
-settings-lastfm-detail = Sonora hace scrobbling a través de tu propia cuenta de API de Last.fm. Crea una y pega aquí la clave y el secreto.
+settings-lastfm-detail = R3TRØ CORE hace scrobbling a través de tu propia cuenta de API de Last.fm. Crea una y pega aquí la clave y el secreto.
 settings-librefm = Libre.fm
 settings-listenbrainz = ListenBrainz
 settings-listenbrainz-detail = Pega un token de usuario desde la página de ajustes de tu cuenta de ListenBrainz.
 settings-maloja = Maloja
-settings-maloja-detail = Indícale a Sonora la dirección de tu servidor Maloja y pega una de sus claves de API.
+settings-maloja-detail = Indícale a R3TRØ CORE la dirección de tu servidor Maloja y pega una de sus claves de API.
 settings-scrobble-off = No conectado
 settings-scrobble-on = Conectado
 settings-scrobble-waiting = Esperando tu navegador…
@@ -700,12 +700,13 @@ settings-license-view = Leer la licencia
 settings-source = Código fuente
 settings-source-detail = El código fuente correspondiente a esta compilación
 settings-source-view = Abrir el repositorio
-settings-team = Equipo
+settings-team = Creadores de R3TRØ CORE
 settings-team-github = GitHub
 settings-role-lead-maintainer = Responsable principal
 settings-role-maintainer = Responsable
 settings-role-contributor = Colaborador
-settings-notice = Copyright © 2026 Sonora Contributors. Sonora se distribuye sin ninguna garantía. Es software libre y puedes redistribuirlo según los términos de la Licencia Pública General de GNU, versión 3 o posterior. Sonora es un cliente no oficial y no está afiliado a Spotify AB.
+settings-notice = R3TRØ CORE está basado en Sonora. Copyright © 2026 Sonora Contributors. Se distribuye sin ninguna garantía. Es software libre y puedes redistribuirlo según los términos de la Licencia Pública General de GNU, versión 3 o posterior. Es un cliente no oficial y no está afiliado a Spotify AB.
+settings-role-creator = Creador
 
 # themes
 theme-system = Sistema
@@ -788,7 +789,7 @@ update-failed = No se pudo instalar la actualización. Inténtalo de nuevo desde
 settings-check-updates = Buscar actualizaciones
 settings-check-updates-detail = Pregunta a GitHub una vez al iniciar si hay una versión más reciente. Sonora instala la actualización por su cuenta solo en Windows; en el resto te muestra qué ha cambiado
 settings-log = Archivo de registro
-settings-log-detail = Lo que Sonora escribió mientras se ejecutaba. Adjúntalo a un informe de error
+settings-log-detail = Lo que R3TRØ CORE escribió mientras se ejecutaba. Adjúntalo a un informe de error
 settings-log-open = Abrir el registro
 
 # tags
@@ -821,3 +822,149 @@ nav-pins-alphabetical = Alfabético
 nav-pins-kind = Por tipo
 nav-show-full-library = Ver toda la biblioteca
 nav-return-top = Volver arriba
+
+# añadidos: traducciones que faltaban
+library-scanning = Buscando en tus carpetas…
+library-scanning-found = Buscando en tus carpetas… { $found } hasta ahora
+library-scanning-progress = Leyendo tu música… { $read } de { $found }
+menu-search-playlists = Buscar una lista
+menu-play-last = Reproducir al final
+menu-play-tracks-last = { $count ->
+    [one] Reproducir { $count } pista al final
+   *[other] Reproducir { $count } pistas al final
+}
+queue-from-radio = Radio de { $name }
+queue-next-in-queue = Siguiente en la cola
+login-choose-title = Iniciar sesión en { $provider }
+login-choose-detail = Elige cómo iniciar sesión en { $provider }.
+artist-appears-on = Aparece en
+album-also-like = También podría gustarte
+album-tab-albums = Álbumes
+album-tab-artists = Artistas
+album-label = ℗ { $label }
+home-recently-added = Añadido recientemente
+home-playlists = Listas de reproducción
+home-favorite-albums = Álbumes favoritos
+home-artists = Artistas
+home-collection-albums = Álbumes de tu colección
+runtime-seconds = { $seconds } s
+runtime-minutes = { $minutes } min { $seconds } s
+runtime-hours = { $hours } h { $minutes } min
+settings-theme-unavailable = Este tema solo se puede aplicar cuando el tema adaptativo está desactivado
+settings-ambient = Fondo ambiental
+settings-ambient-detail = Rellena el reproductor de pantalla completa con colores sacados de la portada
+settings-ambient-motion = Movimiento ambiental
+settings-ambient-motion-detail = Los colores ambientales se desplazan en lugar de quedarse quietos
+settings-visualizer-style-none = Desactivado
+settings-visualizer-style-bars = Barras
+settings-visualizer-style-wave = Onda
+settings-visualizer-style-both = Barras y onda
+settings-visualizer-absolute = Ignorar el volumen
+settings-visualizer-absolute-detail = Dibuja el espectro al nivel propio de la pista, suene como suene en R3TRØ CORE
+settings-os-fullscreen = Usar pantalla completa del sistema
+settings-os-fullscreen-detail = Hace que la vista de pantalla completa llene toda la pantalla, como F11
+settings-startup-no-guest = No disponible en modo invitado
+settings-stay-awake = Mantener el equipo activo al reproducir
+settings-stay-awake-detail = Evita que el equipo se suspenda mientras suena música y mantiene la pantalla encendida en pantalla completa
+widevine-prompt-replace = Las pistas de Apple Music están cifradas y necesitan el módulo Widevine de Google. Un navegador de este equipo tiene uno, y R3TRØ CORE puede descargar la copia propia de Google para usarla en su lugar: es el mismo archivo que instala Chrome y se guarda en su propia carpeta.
+settings-artwork-for-local-files = Carátula de archivos locales
+settings-artwork-for-local-files-detail = Usa los metadatos de los archivos locales para buscar una portada en Deezer para tu estado de Discord
+settings-group-fullscreen = Pantalla completa
+settings-profile-account = { $provider } · { $account }
+settings-scan-walking = Explorando…
+settings-scan-progress = { $percent }%
+settings-scan-done = Listo en { $seconds } s
+theme-unavailable = { $name } (no disponible)
+toast-last-track = { $name } suena al final
+toast-last-album = El álbum suena al final
+toast-last-playlist = La lista suena al final
+toast-last-artist = El artista suena al final
+toast-playback-stopped = La reproducción se detuvo porque varias pistas seguidas no se pudieron reproducir
+toast-throttled = { $name } está limitando la reproducción por ahora. Reintentando en un momento
+toast-still-throttled = { $name } sigue limitando la reproducción. Pulsa reproducir para intentarlo de nuevo
+tags-artists = Artistas
+tags-add-artist = Añadir un artista
+tags-remove-artist = Quitar este artista
+trouble-offline = Sin conexión
+trouble-offline-detail = Revisa tu conexión a internet e inténtalo de nuevo.
+trouble-not-loaded = No se pudo cargar
+trouble-retry = Reintentar
+toast-offline = Sin conexión. Nada se reproducirá en streaming hasta que vuelva.
+toast-settings-broken = Corrige la línea { $name } de settings.json para guardar los cambios
+wake-reason = Suena música
+
+# modo exclusivo
+settings-exclusive-mode = Modo exclusivo (bit-perfect)
+settings-exclusive-mode-detail = Audio directo al DAC, sin conversión. Se libera al pausar
+settings-exclusive-mode-off = Desactivado
+settings-exclusive-mode-auto = Automático
+settings-exclusive-mode-always = Siempre
+
+# fase 4
+settings-original-team = Proyecto original (Sonora)
+settings-discord-name-sonora-provider = R3TRØ CORE - Proveedor
+theme-oled = Negro OLED
+
+# letra: palabras malsonantes
+lyrics-profanity-hide = Ocultar palabras malsonantes
+lyrics-profanity-show = Mostrar palabras malsonantes
+
+# fase 6
+settings-accent = Color de énfasis
+settings-accent-detail = Resalta botones, progreso y selecciones. Automático sigue el color de la canción
+settings-accent-auto = Automático
+settings-profile-background = Elegir fondo
+settings-profile-background-clear = Quitar fondo
+settings-profile-name-hint = Tu nombre
+
+# fase 7
+settings-accent-default = Por defecto
+settings-profile-avatar = Elegir imagen
+settings-profile-avatar-clear = Quitar imagen
+settings-profile-greeting-hint = Apodo o info.
+settings-hide-profanity = Ocultar palabras malsonantes
+settings-hide-profanity-detail = Cubre con asteriscos las palabras fuertes de la letra. También se activa con clic derecho en el micrófono
+sidebar-profile-local = Perfil local
+
+# fase 8
+settings-profile-picture = Foto
+settings-profile-background-label = Fondo
+settings-co-creator-detail = Anthropic
+settings-role-cocreator = Cocreador
+settings-company = R3TRØ CORE es parte de R3TRØ COMPANY, junto a otros proyectos como R3TRØ AI, DJ R3TRØ y más por venir.
+
+# fase 11
+settings-track-notifications = Aviso al cambiar de canción
+settings-track-notifications-detail = Muestra brevemente la portada, el artista y el título en una ventanita, como hace JRiver
+
+# fase 12
+settings-exclusive-equalizer-note = El ecualizador se apaga por su cuenta mientras suena bit-perfect
+song-audio = Audio
+song-audio-format = Formato
+song-audio-rate = Frecuencia de muestreo
+song-audio-depth = Profundidad de bits
+song-audio-bitrate = Tasa de bits
+song-audio-size = Tamaño del archivo
+song-audio-status = Bit-perfect
+song-audio-path = Ubicación
+song-bit-perfect-on = Activo ahora
+song-bit-perfect-off = No, en este momento
+
+# fase 13
+settings-equalizer-vocals-up = Más voces
+settings-equalizer-music-up = Más música
+
+# fase 14
+
+# fase 15
+settings-track-notification-seconds = Duración del aviso
+settings-track-notification-seconds-detail = Cuánto tiempo se queda en pantalla
+settings-track-notification-seconds-value = { $seconds } s
+
+settings-track-notification-position = Posición del aviso
+settings-track-notification-position-detail = Dónde aparece en la pantalla
+settings-notice-position-top-left = Arriba a la izquierda
+settings-notice-position-top-right = Arriba a la derecha
+settings-notice-position-bottom-left = Abajo a la izquierda
+settings-notice-position-bottom-right = Abajo a la derecha
+settings-notice-position-center = Centrada

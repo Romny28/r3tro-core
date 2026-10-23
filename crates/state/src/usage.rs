@@ -111,7 +111,7 @@ impl Usage {
     }
 
     pub fn asking(&self) -> bool {
-        self.loaded && !self.settled && !self.logged_in
+        false
     }
 
     pub fn consented(&self) -> bool {

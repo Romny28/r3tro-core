@@ -18,6 +18,7 @@ const MAX_TEXT_UTF16_UNITS: usize = 128;
 const MUSIC: &str = "Music";
 /// Where the Sonora button sends a friend who presses it.
 const SONORA_URL: &str = "https://sonorahq.org";
+const APP: &str = "R3TRØ CORE";
 
 struct Attached {
     _discord: Entity<Discord>,
@@ -228,7 +229,8 @@ impl Discord {
         let named = provider.map(|provider| Source {
             badge: settings.discord_badge().then(|| provider.slug()),
             listening: match settings.discord_name() {
-                DiscordName::Sonora => None,
+                DiscordName::Sonora => Some(APP.to_owned()),
+                DiscordName::SonoraProvider => Some(format!("{APP} - {}", provider.listening_to())),
                 DiscordName::Provider => Some(provider.listening_to().to_owned()),
                 DiscordName::Music => Some(MUSIC.to_owned()),
                 DiscordName::Title => fit_text(&track.name).or_else(|| Some(MUSIC.to_owned())),

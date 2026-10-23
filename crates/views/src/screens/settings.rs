@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::shared::confirm::{Confirm, Kind};
@@ -14,6 +15,7 @@ use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FocusHandle, FontWeight, MouseButton,
     MouseUpEvent, Pixels, Render, SharedString, Task, Window, div, px, relative,
 };
+use gpui::{ImageSource, ObjectFit, PathPromptOptions, Resource, img, rgba};
 use gpui::{ScrollHandle, prelude::*, svg};
 use i18n::{Language, t};
 use music::drm::Origin;
@@ -22,18 +24,25 @@ use music::scrobble::{Link, Secret};
 use music::{AccountChoice, SignIn, SignInPrompt, WritingSystem};
 use router::{Destination, NavEntry, Screen, SettingsTab, navigate};
 use state::{
-    AppSettings, CdmState, DiscordName, Drm, Failure, FullscreenControlsAutohide, Io, Playback,
-    SYSTEM_FONT, Scan, ScrobbleState, Scrobbling, Session, SessionState, Sleep, Sonora,
+    AppSettings, CdmState, DiscordName, Drm, Failure, FullscreenControlsAutohide, Io,
+    NoticePosition, Playback, SYSTEM_FONT, Scan, ScrobbleState, Scrobbling, Session, SessionState,
+    Sleep, Sonora,
 };
 use ui::{ActiveTheme as _, Deck, LEADING, Scrollbar, Scroller, eyebrow, snapped};
 use ui::{
     Avatar, Button, Dismiss, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE,
     MAX_TRANSPARENCY, MIN_FONT, MIN_LYRICS_SCALE, MenuItem, Modal, Pace, Picker, Popovers, Radio,
-    Rounding, Saver, Scrubber, ScrubberState, Separator, Skeleton, Stillness, Switch, TabBar, Text,
+    Rounding, Saver, Scrubber, ScrubberState, Separator, Stillness, Switch, TabBar, Text,
     Theme, ThemeKind, Vacancy, VisualizerStyle,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The accent colours the picker offers: white, mint, sky blue, cyan, pink, lavender, amber, red
+/// and green.
+const ACCENTS: [&str; 9] = [
+    "#FFFFFF", "#3DF5C2", "#7AA2FF", "#3DD9F5", "#FF7AB6", "#C58BFF", "#FFB347", "#FF6B6B",
+    "#7CE38B",
+];
 /// How wide the settings column, the search field and the category bar grow at most.
 const WIDTH: Pixels = px(640.);
 /// How much a query found in a setting's title counts over one found in its detail.
@@ -54,6 +63,10 @@ const CORNERS: &str = "corners";
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
 const WINDOW_ROUNDING: &str = "window-rounding";
 const FULLSCREEN_CONTROLS_AUTOHIDE: &str = "fullscreen-controls-autohide";
+const EXCLUSIVE_MODE: &str = "exclusive-mode";
+const TRACK_NOTIFICATION_SECONDS: &str = "track-notification-seconds";
+const TRACK_NOTIFICATION_POSITION: &str = "track-notification-position";
+const NOTICE_DURATIONS: [u32; 6] = [2, 3, 4, 5, 8, 10];
 const VISUALIZER_STYLE: &str = "visualizer-style";
 const LANGUAGES: &str = "languages";
 const TYPEFACES: &str = "typefaces";
@@ -127,6 +140,9 @@ enum Slot {
     Language,
     Tray,
     TrayIcon,
+    TrackNotifications,
+    TrackNotificationSeconds,
+    TrackNotificationPosition,
     Accounts,
     LocalFolder,
     Theme,
@@ -165,6 +181,9 @@ enum Slot {
     Gapless,
     Sleep,
     StayAwake,
+    ExclusiveMode,
+    Accent,
+    HideProfanity,
     Widevine,
     Equalizer,
     EqualizerPreset,
@@ -250,7 +269,10 @@ struct Member {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 enum Role {
+    Creator,
+    CoCreator,
     LeadMaintainer,
     Maintainer,
     Contributor,
@@ -259,6 +281,8 @@ enum Role {
 impl Role {
     fn label(self) -> SharedString {
         match self {
+            Self::Creator => t!("settings-role-creator"),
+            Self::CoCreator => t!("settings-role-cocreator"),
             Self::LeadMaintainer => t!("settings-role-lead-maintainer"),
             Self::Maintainer => t!("settings-role-maintainer"),
             Self::Contributor => t!("settings-role-contributor"),
@@ -277,7 +301,17 @@ macro_rules! member {
     };
 }
 
-const MEMBERS: [Member; 5] = [
+const MEMBERS: [Member; 2] = [
+    member!("Romny28", Role::Creator),
+    Member {
+        login: "Claude (Anthropic)",
+        avatar: "https://claude.ai/favicon.ico",
+        profile: "https://claude.com",
+        role: Role::CoCreator,
+    },
+];
+
+const ORIGINAL: [Member; 5] = [
     member!("nolight132", Role::LeadMaintainer),
     member!("zxsleebu", Role::Maintainer),
     member!("fx-got", Role::Maintainer),
@@ -292,6 +326,8 @@ pub struct SettingsView {
     settings: Entity<AppSettings>,
     tab: SettingsTab,
     search: Entity<Input>,
+    profile_name: Entity<Input>,
+    profile_greeting: Entity<Input>,
     /// The search field's text, trimmed. Empty means the page shows one category.
     query: String,
     /// How tall the header floating over the page measured last, so the rows start beneath it.
@@ -394,6 +430,26 @@ impl SettingsView {
         })
         .detach();
 
+        let profile_name = cx.new(|cx| Input::new("settings-profile-name-hint", cx).compact());
+        let name = settings.read(cx).profile_name().to_owned();
+        profile_name.update(cx, |input, cx| input.set_text(name, cx));
+        let stored = settings.clone();
+        cx.observe(&profile_name, move |_, input, cx| {
+            let text = input.read(cx).text().trim().to_owned();
+            stored.update(cx, |settings, cx| settings.set_profile_name(text, cx));
+        })
+        .detach();
+        let profile_greeting =
+            cx.new(|cx| Input::new("settings-profile-greeting-hint", cx).compact());
+        let greeting = settings.read(cx).profile_greeting().to_owned();
+        profile_greeting.update(cx, |input, cx| input.set_text(greeting, cx));
+        let stored = settings.clone();
+        cx.observe(&profile_greeting, move |_, input, cx| {
+            let text = input.read(cx).text().trim().to_owned();
+            stored.update(cx, |settings, cx| settings.set_profile_greeting(text, cx));
+        })
+        .detach();
+
         Self {
             session,
             playback,
@@ -401,6 +457,8 @@ impl SettingsView {
             settings,
             tab: SettingsTab::General,
             search,
+            profile_name,
+            profile_greeting,
             query: String::new(),
             header_height: Pixels::ZERO,
             header_measured: false,
@@ -550,6 +608,9 @@ impl SettingsView {
                 Slot::Title("settings-group-window"),
                 Slot::Tray,
                 Slot::TrayIcon,
+                Slot::TrackNotifications,
+                Slot::TrackNotificationSeconds,
+                Slot::TrackNotificationPosition,
                 Slot::Title("settings-group-accounts"),
                 Slot::Accounts,
                 Slot::Title("settings-group-library"),
@@ -558,6 +619,7 @@ impl SettingsView {
             SettingsTab::Appearance => vec![
                 Slot::Title("settings-tab-general"),
                 Slot::Theme,
+                Slot::Accent,
                 Slot::Adaptive,
                 Slot::Icons,
                 Slot::Opacity,
@@ -609,6 +671,7 @@ impl SettingsView {
                     Slot::Gapless,
                     Slot::Sleep,
                     Slot::StayAwake,
+                    Slot::ExclusiveMode,
                 ];
                 if self.drm.read(cx).shown(cx) {
                     slots.push(Slot::Widevine);
@@ -626,7 +689,7 @@ impl SettingsView {
                 {
                     slots.push(Slot::PreferLocalLyrics);
                 }
-                slots.extend([Slot::Karaoke, Slot::Romanized]);
+                slots.extend([Slot::Karaoke, Slot::Romanized, Slot::HideProfanity]);
                 slots
             }
             SettingsTab::Privacy => {
@@ -672,6 +735,18 @@ impl SettingsView {
                 t!("settings-close-to-tray-detail"),
             ),
             Slot::TrayIcon => (t!("settings-tray-icon"), t!("settings-tray-icon-detail")),
+            Slot::TrackNotifications => (
+                t!("settings-track-notifications"),
+                t!("settings-track-notifications-detail"),
+            ),
+            Slot::TrackNotificationSeconds => (
+                t!("settings-track-notification-seconds"),
+                t!("settings-track-notification-seconds-detail"),
+            ),
+            Slot::TrackNotificationPosition => (
+                t!("settings-track-notification-position"),
+                t!("settings-track-notification-position-detail"),
+            ),
             Slot::Accounts => {
                 let detail = t!("settings-accounts-detail");
                 let names = self.account_words(cx);
@@ -685,6 +760,7 @@ impl SettingsView {
                 },
             ),
             Slot::Theme => (t!("settings-theme"), t!("settings-theme-detail")),
+            Slot::Accent => (t!("settings-accent"), t!("settings-accent-detail")),
             Slot::Adaptive => (t!("settings-adaptive"), t!("settings-adaptive-detail")),
             Slot::Ambient => (t!("settings-ambient"), t!("settings-ambient-detail")),
             Slot::AmbientMotion => (
@@ -765,6 +841,10 @@ impl SettingsView {
             Slot::Gapless => (t!("settings-gapless"), t!("settings-gapless-detail")),
             Slot::Sleep => (t!("settings-sleep"), t!("settings-sleep-detail")),
             Slot::StayAwake => (t!("settings-stay-awake"), t!("settings-stay-awake-detail")),
+            Slot::ExclusiveMode => (
+                t!("settings-exclusive-mode"),
+                t!("settings-exclusive-mode-detail"),
+            ),
             Slot::Widevine => {
                 let (detail, _) = widevine_copy(self.drm.read(cx).state());
                 (t!("settings-widevine"), i18n::lookup(detail, None))
@@ -790,6 +870,10 @@ impl SettingsView {
             Slot::Romanized => (
                 t!("settings-romanized-lyrics"),
                 t!("settings-romanized-lyrics-detail"),
+            ),
+            Slot::HideProfanity => (
+                t!("settings-hide-profanity"),
+                t!("settings-hide-profanity-detail"),
             ),
             Slot::LyricsForLocal => (
                 t!("settings-lyrics-for-local-files"),
@@ -938,9 +1022,13 @@ impl SettingsView {
             Slot::Language => self.language_row(cx).element,
             Slot::Tray => self.tray_row(cx).element,
             Slot::TrayIcon => self.tray_icon_row(cx).element,
+            Slot::TrackNotifications => self.track_notifications_row(cx).element,
+            Slot::TrackNotificationSeconds => self.track_notification_seconds_row(cx).element,
+            Slot::TrackNotificationPosition => self.track_notification_position_row(cx).element,
             Slot::Accounts => self.accounts_row(cx).element,
             Slot::LocalFolder => self.local_folder_row(cx).element,
             Slot::Theme => self.theme_row(cx).element,
+            Slot::Accent => self.accent_row(cx).element,
             Slot::Adaptive => self.adaptive_row(cx).element,
             Slot::Ambient => self.ambient_row(cx).element,
             Slot::AmbientMotion => self.ambient_motion_row(cx).element,
@@ -976,6 +1064,7 @@ impl SettingsView {
             Slot::Gapless => self.gapless_row(cx).element,
             Slot::Sleep => self.sleep_row(cx).element,
             Slot::StayAwake => self.stay_awake_row(cx).element,
+            Slot::ExclusiveMode => self.exclusive_mode_row(cx).element,
             Slot::Widevine => self.widevine_row(cx).element,
             Slot::Equalizer => self.equalizer_row(cx).element,
             Slot::EqualizerPreset => self.equalizer_preset_row(cx).element,
@@ -984,6 +1073,7 @@ impl SettingsView {
             Slot::PreferLocalLyrics => self.prefer_local_lyrics_row(cx).element,
             Slot::Karaoke => self.karaoke_lyrics_row(cx).element,
             Slot::Romanized => self.romanized_lyrics_row(cx).element,
+            Slot::HideProfanity => self.hide_profanity_row(cx).element,
             Slot::LyricsForLocal => self.lyrics_for_local_files_row(cx).element,
             Slot::Discord => self.discord_row(cx).element,
             Slot::DiscordName => self.discord_name_row(cx).element,
@@ -1612,58 +1702,227 @@ impl SettingsView {
 
     fn profile(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
-        let muted = theme.muted_foreground;
-        // The service the account belongs to, named next to the region so the card says which
-        // provider it is rather than a bare country code.
-        let provider = self
-            .session
-            .read(cx)
-            .providers()
-            .find(|info| info.active)
-            .map(|info| info.name.to_string());
-
-        div()
-            .flex()
-            .items_center()
-            .gap_4()
-            .child(match self.session.read(cx).state() {
-                SessionState::SignedIn(profile) => match &profile.avatar {
-                    Some(avatar) => Avatar::new(Some(avatar.clone()))
-                        .size(px(64.))
-                        .into_any_element(),
-                    None => Initials::new(profile.display_name.clone(), px(64.)).into_any_element(),
-                },
-                _ => Skeleton::new().size(px(64.)).circle().into_any_element(),
-            })
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(match self.session.read(cx).state() {
-                        SessionState::SignedIn(profile) => div()
-                            .child(profile.display_name.clone())
-                            .text_size(theme.text(Text::Large))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .into_any_element(),
-                        _ => Skeleton::new().w(px(140.)).h(px(14.)).into_any_element(),
-                    })
-                    .child(match self.session.read(cx).state() {
-                        SessionState::SignedIn(profile) => div()
-                            .child(match &provider {
-                                Some(provider) => t!(
-                                    "settings-profile-account",
-                                    provider = provider,
-                                    account = &profile.id
-                                ),
-                                None => profile.id.clone().into(),
-                            })
-                            .text_color(muted)
-                            .text_size(theme.text(Text::Small))
-                            .into_any_element(),
-                        _ => Skeleton::new().w(px(90.)).h(px(10.)).into_any_element(),
-                    }),
+        let (name, background, avatar) = {
+            let settings = self.settings.read(cx);
+            (
+                settings.profile_name().to_owned(),
+                settings.profile_background().to_owned(),
+                settings.profile_avatar().to_owned(),
             )
+        };
+        let account = match self.session.read(cx).state() {
+            SessionState::SignedIn(profile) => Some(profile.display_name.to_string()),
+            _ => None,
+        };
+        let shown = match name.is_empty() {
+            false => name.clone(),
+            true => account.unwrap_or_default(),
+        };
+
+        let for_background = self.settings.clone();
+        let for_background_clear = self.settings.clone();
+        let for_avatar = self.settings.clone();
+        let for_avatar_clear = self.settings.clone();
+        let mut card = div()
+            .relative()
+            .overflow_hidden()
+            .w_full()
+            .rounded(theme.radius)
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.secondary);
+        if !background.is_empty() {
+            card = card
+                .child(
+                    img(ImageSource::Resource(Resource::Path(Arc::from(Path::new(
+                        &background,
+                    )))))
+                    .absolute()
+                    .size_full()
+                    .object_fit(ObjectFit::Cover),
+                )
+                .child(div().absolute().size_full().bg(rgba(0x000000a6)));
+        }
+
+        card.child(
+            div()
+                .relative()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .p_4()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_4()
+                        .child(match avatar.is_empty() {
+                            true => Initials::new(shown, px(64.)).into_any_element(),
+                            false => Avatar::new(Some(format!("file://{avatar}")))
+                                .size(px(64.))
+                                .into_any_element(),
+                        })
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(div().w(px(260.)).child(self.profile_name.clone()))
+                                .child(div().w(px(260.)).child(self.profile_greeting.clone())),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .w(px(96.))
+                                        .flex_none()
+                                        .text_size(theme.text(Text::Small))
+                                        .text_color(theme.muted_foreground)
+                                        .child(t!("settings-profile-picture")),
+                                )
+                                .child(
+                                    Button::new("profile-avatar")
+                                        .small()
+                                        .label(t!("settings-profile-avatar"))
+                                        .on_click(move |_, _, cx| {
+                                            choose_profile_image(for_avatar.clone(), true, cx)
+                                        }),
+                                )
+                                .when(!avatar.is_empty(), |this| {
+                                    this.child(
+                                        Button::new("profile-avatar-clear")
+                                            .small()
+                                            .ghost()
+                                            .label(t!("settings-profile-avatar-clear"))
+                                            .on_click(move |_, _, cx| {
+                                                for_avatar_clear.update(cx, |settings, cx| {
+                                                    settings.set_profile_avatar(String::new(), cx)
+                                                });
+                                            }),
+                                    )
+                                }),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .w(px(96.))
+                                        .flex_none()
+                                        .text_size(theme.text(Text::Small))
+                                        .text_color(theme.muted_foreground)
+                                        .child(t!("settings-profile-background-label")),
+                                )
+                                .child(
+                                    Button::new("profile-background")
+                                        .small()
+                                        .label(t!("settings-profile-background"))
+                                        .on_click(move |_, _, cx| {
+                                            choose_profile_image(for_background.clone(), false, cx)
+                                        }),
+                                )
+                                .when(!background.is_empty(), |this| {
+                                    this.child(
+                                        Button::new("profile-background-clear")
+                                            .small()
+                                            .ghost()
+                                            .label(t!("settings-profile-background-clear"))
+                                            .on_click(move |_, _, cx| {
+                                                for_background_clear.update(cx, |settings, cx| {
+                                                    settings
+                                                        .set_profile_background(String::new(), cx)
+                                                });
+                                            }),
+                                    )
+                                }),
+                        ),
+                ),
+        )
+    }
+
+    fn accent_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let look = self.look(cx);
+        let chosen = self.settings.read(cx).accent().to_owned();
+
+        let swatches = ACCENTS.into_iter().enumerate().map(|(index, hex)| {
+            let selected = chosen.eq_ignore_ascii_case(hex);
+            let color = gpui::rgb(u32::from_str_radix(&hex[1..], 16).unwrap_or(0xffffff));
+            div()
+                .id(("accent", index))
+                .size(px(22.))
+                .flex_none()
+                .rounded_full()
+                .bg(color)
+                .border_2()
+                .border_color(match selected {
+                    true => theme.foreground,
+                    false => theme.border,
+                })
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    let overrides = this.settings.update(cx, |settings, cx| {
+                        settings.set_accent(hex.to_owned(), cx);
+                        settings.theme_overrides()
+                    });
+                    Theme::fade(look, &overrides, cx);
+                    cx.notify();
+                }))
+        });
+        let by_default = Button::new("accent-default")
+            .ghost()
+            .small()
+            .label(t!("settings-accent-default"))
+            .selected(chosen.is_empty())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let overrides = this.settings.update(cx, |settings, cx| {
+                    settings.set_accent(String::new(), cx);
+                    settings.theme_overrides()
+                });
+                Theme::fade(look, &overrides, cx);
+                cx.notify();
+            }));
+        let automatic = Button::new("accent-auto")
+            .ghost()
+            .small()
+            .label(t!("settings-accent-auto"))
+            .selected(chosen == "auto")
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let overrides = this.settings.update(cx, |settings, cx| {
+                    settings.set_accent("auto".to_owned(), cx);
+                    settings.theme_overrides()
+                });
+                Theme::fade(look, &overrides, cx);
+                cx.notify();
+            }));
+
+        self.row(
+            t!("settings-accent"),
+            t!("settings-accent-detail"),
+            muted,
+            small,
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(by_default)
+                .child(automatic)
+                .children(swatches)
+                .into_any_element(),
+        )
     }
 
     fn theme_row(&self, cx: &mut Context<Self>) -> Setting {
@@ -2002,6 +2261,40 @@ impl SettingsView {
         )
     }
 
+    fn exclusive_mode_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let chosen = self.settings.read(cx).exclusive_mode();
+        let label = |mode: music::ExclusiveMode| -> SharedString {
+            match mode {
+                music::ExclusiveMode::Off => t!("settings-exclusive-mode-off"),
+                music::ExclusiveMode::Auto => t!("settings-exclusive-mode-auto"),
+                music::ExclusiveMode::Always => t!("settings-exclusive-mode-always"),
+            }
+        };
+
+        let picker = Picker::new(EXCLUSIVE_MODE, &self.popovers, label(chosen))
+            .width(Picker::NARROW)
+            .items(music::ExclusiveMode::ALL.map(|mode| {
+                MenuItem::new(mode.id(), label(mode))
+                    .selected(mode == chosen)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.settings
+                            .update(cx, |settings, cx| settings.set_exclusive_mode(mode, cx));
+                        cx.notify();
+                    }))
+            }));
+
+        self.row(
+            t!("settings-exclusive-mode"),
+            t!("settings-exclusive-mode-detail"),
+            muted,
+            small,
+            picker.into_any_element(),
+        )
+    }
+
     fn fullscreen_controls_autohide_row(&self, cx: &mut Context<Self>) -> Setting {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
@@ -2213,6 +2506,94 @@ impl SettingsView {
                         .update(cx, |settings, cx| settings.set_tray_icon(!on, cx));
                 }))
                 .into_any_element(),
+        )
+    }
+
+    fn track_notifications_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).track_notifications();
+
+        self.row(
+            t!("settings-track-notifications"),
+            t!("settings-track-notifications-detail"),
+            muted,
+            small,
+            Switch::new("track-notifications", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_track_notifications(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn track_notification_position_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let chosen = self.settings.read(cx).track_notification_position();
+        let label = |position: NoticePosition| -> SharedString {
+            match position {
+                NoticePosition::TopLeft => t!("settings-notice-position-top-left"),
+                NoticePosition::TopRight => t!("settings-notice-position-top-right"),
+                NoticePosition::BottomLeft => t!("settings-notice-position-bottom-left"),
+                NoticePosition::BottomRight => t!("settings-notice-position-bottom-right"),
+                NoticePosition::Center => t!("settings-notice-position-center"),
+            }
+        };
+
+        let picker = Picker::new(TRACK_NOTIFICATION_POSITION, &self.popovers, label(chosen))
+            .width(Picker::NARROW)
+            .items(NoticePosition::ALL.map(|position| {
+                MenuItem::new(position.id(), label(position))
+                    .selected(position == chosen)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.settings.update(cx, |settings, cx| {
+                            settings.set_track_notification_position(position, cx)
+                        });
+                        cx.notify();
+                    }))
+            }));
+
+        self.row(
+            t!("settings-track-notification-position"),
+            t!("settings-track-notification-position-detail"),
+            muted,
+            small,
+            picker.into_any_element(),
+        )
+    }
+
+    fn track_notification_seconds_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let chosen = self.settings.read(cx).track_notification_seconds();
+        let label = |seconds: u32| -> SharedString {
+            SharedString::from(t!("settings-track-notification-seconds-value", seconds = seconds))
+        };
+
+        let picker = Picker::new(TRACK_NOTIFICATION_SECONDS, &self.popovers, label(chosen))
+            .width(Picker::NARROW)
+            .items(NOTICE_DURATIONS.map(|seconds| {
+                MenuItem::new(seconds.to_string(), label(seconds))
+                    .selected(seconds == chosen)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.settings.update(cx, |settings, cx| {
+                            settings.set_track_notification_seconds(seconds, cx)
+                        });
+                        cx.notify();
+                    }))
+            }));
+
+        self.row(
+            t!("settings-track-notification-seconds"),
+            t!("settings-track-notification-seconds-detail"),
+            muted,
+            small,
+            picker.into_any_element(),
         )
     }
 
@@ -2977,6 +3358,26 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_karaoke_lyrics(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn hide_profanity_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).hide_profanity();
+
+        self.row(
+            t!("settings-hide-profanity"),
+            t!("settings-hide-profanity-detail"),
+            muted,
+            small,
+            Switch::new("hide-profanity", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_hide_profanity(!on, cx));
                 }))
                 .into_any_element(),
         )
@@ -4023,9 +4424,18 @@ impl SettingsView {
         let theme = *cx.theme();
 
         div()
+            .flex()
+            .flex_col()
             .text_color(theme.muted_foreground)
             .text_size(theme.text(Text::Small))
             .child(t!("settings-notice"))
+            .child(
+                div()
+                    .mt_3()
+                    .text_size(theme.text(Text::Small))
+                    .text_color(theme.muted_foreground)
+                    .child(t!("settings-company")),
+            )
     }
 
     fn team(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -4061,7 +4471,10 @@ impl SettingsView {
                                     div()
                                         .text_size(theme.text(Text::Small))
                                         .text_color(theme.muted_foreground)
-                                        .child(t!("settings-team-github")),
+                                        .child(match member.profile.contains("github.com") {
+                                            true => t!("settings-team-github"),
+                                            false => t!("settings-co-creator-detail"),
+                                        }),
                                 ),
                         )
                         .child(
@@ -4069,6 +4482,38 @@ impl SettingsView {
                                 .flex_none()
                                 .text_size(theme.text(Text::Small))
                                 .font_weight(FontWeight::MEDIUM)
+                                .text_color(theme.muted_foreground)
+                                .child(member.role.label()),
+                        )
+                })),
+        )
+    }
+
+    fn original_team(&self, cx: &Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+
+        InfoCard::new(t!("settings-original-team")).flex_none().child(
+            div()
+                .flex()
+                .flex_col()
+                .children(ORIGINAL.into_iter().enumerate().map(|(index, member)| {
+                    div()
+                        .id(("original-member", index))
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px(theme.metrics.pad)
+                        .py(theme.metrics.pad / 4.)
+                        .rounded(theme.radius)
+                        .cursor_pointer()
+                        .hover(|style| style.bg(theme.secondary_hover))
+                        .on_click(move |_, _, cx| cx.open_url(member.profile))
+                        .text_size(theme.text(Text::Small))
+                        .child(Avatar::new(Some(member.avatar)).size(px(24.)))
+                        .child(div().flex_1().min_w_0().child(member.login))
+                        .child(
+                            div()
+                                .flex_none()
                                 .text_color(theme.muted_foreground)
                                 .child(member.role.label()),
                         )
@@ -4525,7 +4970,9 @@ impl Render for SettingsView {
                             })
                             .child(self.panel(window, cx))
                             .when(about, |this| {
-                                this.child(self.team(cx)).child(self.notice(cx))
+                                this.child(self.team(cx))
+                                    .child(self.original_team(cx))
+                                    .child(self.notice(cx))
                             }),
                     ),
             )
@@ -4722,6 +5169,8 @@ fn preset_key(preset: Preset) -> &'static str {
         Preset::Electronic => "settings-equalizer-electronic",
         Preset::Acoustic => "settings-equalizer-acoustic",
         Preset::Loudness => "settings-equalizer-loudness",
+        Preset::VocalsUp => "settings-equalizer-vocals-up",
+        Preset::MusicUp => "settings-equalizer-music-up",
     }
 }
 
@@ -4742,4 +5191,27 @@ fn hertz(frequency: f32) -> SharedString {
         ),
         false => t!("settings-equalizer-hertz", hz = frequency.round() as i64),
     }
+}
+
+fn choose_profile_image(settings: Entity<AppSettings>, avatar: bool, cx: &mut App) {
+    let receiver = cx.prompt_for_paths(PathPromptOptions {
+        files: true,
+        directories: false,
+        multiple: false,
+        prompt: None,
+    });
+    cx.spawn(async move |cx| {
+        let Ok(Ok(Some(paths))) = receiver.await else {
+            return;
+        };
+        let Some(path) = paths.into_iter().next() else {
+            return;
+        };
+        let path = path.to_string_lossy().into_owned();
+        settings.update(cx, |settings, cx| match avatar {
+            true => settings.set_profile_avatar(path, cx),
+            false => settings.set_profile_background(path, cx),
+        });
+    })
+    .detach();
 }

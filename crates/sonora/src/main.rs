@@ -6,7 +6,9 @@ mod dock;
 mod http;
 mod logging;
 mod memory;
+mod migrate;
 mod single;
+mod splash;
 #[cfg(windows)]
 mod thumbbar;
 mod tray;
@@ -14,7 +16,7 @@ mod tray;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{
     App, AppContext as _, Bounds, Pixels, QuitMode, Size, TitlebarOptions, WindowBounds,
@@ -34,6 +36,9 @@ const FIRST_SIZE: Size<Pixels> = size(px(920.), px(640.));
 /// of each other. This is how long to wait for the burst to go quiet before acting on it, so
 /// they land as one batch instead of racing each other into the engine one at a time.
 const OPEN_COALESCE: Duration = Duration::from_millis(250);
+/// How long the splash gets to paint before the app starts loading, and the least it stays up.
+const SPLASH_PAINT: Duration = Duration::from_millis(150);
+const SPLASH_FOR: Duration = Duration::from_millis(1800);
 
 fn main() {
     memory::tune();
@@ -50,6 +55,7 @@ fn main() {
         }
         return;
     }
+    migrate::from_sonora();
     logging::init();
 
     let args: Vec<String> = std::env::args()
@@ -93,7 +99,7 @@ fn main() {
     });
     app.on_reopen(show_window);
 
-    app.run(move |cx: &mut App| {
+    let boot = move |cx: &mut App| {
         if let Err(error) = assets::Assets.load_fonts(cx) {
             log::error!("sonora: cannot load bundled fonts: {error:#}");
         }
@@ -110,7 +116,7 @@ fn main() {
             Arc::new(music::local::LocalProvider::new(
                 dirs::cache_dir()
                     .unwrap_or_else(std::env::temp_dir)
-                    .join("sonora"),
+                    .join("r3tro-core"),
                 database.clone(),
                 storage::Cache::standard(),
             ));
@@ -171,7 +177,6 @@ fn main() {
         actions::register(lingers, cx);
         memory::watch(cx);
 
-        open_window(cx);
         let session = Sonora::global(cx).session.clone();
         session.update(cx, |session, cx| session.restore(cx));
 
@@ -207,6 +212,25 @@ fn main() {
         .detach();
 
         cx.activate(true);
+    };
+
+    app.run(move |cx: &mut App| {
+        let opened_at = Instant::now();
+        let splash = splash::show(cx);
+        cx.spawn(async move |cx| {
+            cx.background_executor().timer(SPLASH_PAINT).await;
+            cx.update(|cx| boot(cx));
+            let wait = SPLASH_FOR.saturating_sub(opened_at.elapsed());
+            cx.background_executor().timer(wait).await;
+            cx.update(|cx| {
+                open_window(cx);
+                if let Some(splash) = splash {
+                    splash::close(&splash, cx);
+                }
+                cx.activate(true);
+            });
+        })
+        .detach();
     });
 }
 
@@ -315,6 +339,7 @@ fn open_window(cx: &mut App) {
         updates: _,
         usage: _,
         wake: _,
+        track_notice: _,
     } = Sonora::global(cx);
     let (session, library, playback, queue) = (
         session.clone(),
@@ -344,7 +369,7 @@ fn open_window(cx: &mut App) {
             display_id,
             window_background: background,
             titlebar: Some(TitlebarOptions {
-                title: Some("Sonora".into()),
+                title: Some("R3TRØ CORE".into()),
                 appears_transparent: true,
                 traffic_light_position: Some(point(px(9.), px(9.))),
             }),
@@ -352,7 +377,7 @@ fn open_window(cx: &mut App) {
             is_movable: true,
             is_resizable: true,
             app_owns_titlebar_drag: true,
-            app_id: Some("sonora".into()),
+            app_id: Some("r3tro-core".into()),
             window_min_size: Some(LEAST_SIZE),
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             window_decorations: Some(decorations),

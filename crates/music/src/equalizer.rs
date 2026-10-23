@@ -48,10 +48,12 @@ pub enum Preset {
     Electronic,
     Acoustic,
     Loudness,
+    VocalsUp,
+    MusicUp,
 }
 
 impl Preset {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 14] = [
         Self::Flat,
         Self::BassBoost,
         Self::BassReducer,
@@ -64,6 +66,8 @@ impl Preset {
         Self::Electronic,
         Self::Acoustic,
         Self::Loudness,
+        Self::VocalsUp,
+        Self::MusicUp,
     ];
 
     pub fn id(self) -> &'static str {
@@ -80,6 +84,8 @@ impl Preset {
             Self::Electronic => "electronic",
             Self::Acoustic => "acoustic",
             Self::Loudness => "loudness",
+            Self::VocalsUp => "vocals-up",
+            Self::MusicUp => "music-up",
         }
     }
 
@@ -97,6 +103,11 @@ impl Preset {
             Self::Electronic => [4.5, 4., 1., 0., -2., 2., 1., 1.5, 4., 5.],
             Self::Acoustic => [5., 4.5, 3.5, 1., 2., 1.5, 3.5, 4., 3.5, 2.],
             Self::Loudness => [6., 4., 0., 0., -2., 0., -1., -5., 5., 1.],
+            // Lifts the range a voice sits in and trims the extremes that compete with it.
+            Self::VocalsUp => [-2., -2., -1., 1., 4., 5., 4., 2., -1., -2.],
+            // The inverse: a scoop that steps back from vocals and pushes the instruments
+            // around them.
+            Self::MusicUp => [4., 3., 2., 0., -3., -3., -2., 0., 3., 4.],
         }
     }
 
@@ -247,6 +258,48 @@ impl Delay {
     }
 }
 
+fn decibels_to_scale(decibels: f32) -> f32 {
+    10f32.powf(decibels / 20.)
+}
+
+/// How far the combined response of every band rises above unity at its highest point, in
+/// decibels, measured across the audible range.
+fn peak_boost(gains: &Gains, rate: f32) -> f32 {
+    let filters: Vec<Biquad> = FREQUENCIES
+        .iter()
+        .zip(gains)
+        .map(|(frequency, gain)| Biquad::peaking(*frequency, *gain, rate))
+        .collect();
+    let top = (rate / 2. * NYQUIST_MARGIN).min(20_000.);
+    let points = 96;
+    (0..points)
+        .map(|point| {
+            let frequency = 20. * (top / 20.).powf(point as f32 / (points - 1) as f32);
+            let w = std::f32::consts::TAU * frequency / rate;
+            let (sin1, cos1) = w.sin_cos();
+            let (sin2, cos2) = (2. * w).sin_cos();
+            filters
+                .iter()
+                .map(|c| {
+                    let num_re = c.b0 + c.b1 * cos1 + c.b2 * cos2;
+                    let num_im = c.b1 * sin1 + c.b2 * sin2;
+                    let den_re = 1. + c.a1 * cos1 + c.a2 * cos2;
+                    let den_im = c.a1 * sin1 + c.a2 * sin2;
+                    10. * ((num_re * num_re + num_im * num_im)
+                        / (den_re * den_re + den_im * den_im))
+                        .log10()
+                })
+                .sum::<f32>()
+        })
+        .fold(0., f32::max)
+}
+
+/// The level cut that keeps the loudest boost from passing full scale: zero when the bands
+/// only cut, and the peak boost otherwise.
+fn headroom_for(gains: &Gains, rate: f32) -> f32 {
+    -peak_boost(gains, rate).max(0.)
+}
+
 /// Runs the equalizer over an interleaved source. The gains it applies glide toward the
 /// handle's values over `RAMP`, and the whole chain is skipped while every band is flat, so
 /// a disabled equalizer costs nothing and changes nothing.
@@ -261,6 +314,11 @@ pub struct Equalized<I> {
     frames_left: u32,
     ramp_frames: u32,
 
+    headroom: f32,
+    headroom_target: f32,
+    headroom_step: f32,
+    scale: f32,
+
     coefficients: [Biquad; BANDS],
     /// Delay lines indexed by band, then channel.
     delays: Vec<[Delay; BANDS]>,
@@ -270,11 +328,18 @@ pub struct Equalized<I> {
     channel: usize,
     channels: usize,
     rate: u32,
+    /// The bit-perfect flag as last seen, so a change is caught even though it bumps no
+    /// generation of its own.
+    bit_perfect: bool,
 }
 
 impl<I: Source> Equalized<I> {
     pub fn new(input: I, equalizer: Equalizer) -> Self {
-        let current = equalizer.effective();
+        let bit_perfect = crate::audio::exclusive_active();
+        let current = match bit_perfect {
+            true => [0.; BANDS],
+            false => equalizer.effective(),
+        };
         let seen = equalizer.generation();
         let mut this = Self {
             input,
@@ -285,12 +350,17 @@ impl<I: Source> Equalized<I> {
             step: [0.; BANDS],
             frames_left: 0,
             ramp_frames: 1,
+            headroom: 0.,
+            headroom_target: 0.,
+            headroom_step: 0.,
+            scale: 1.,
             coefficients: [Biquad::identity(); BANDS],
             delays: Vec::new(),
             active: false,
             channel: 0,
             channels: 0,
             rate: 0,
+            bit_perfect,
         };
         this.resync();
         this
@@ -311,6 +381,14 @@ impl<I: Source> Equalized<I> {
         self.frames_left = self.frames_left.min(self.ramp_frames);
         self.delays = vec![[Delay::default(); BANDS]; channels];
         self.recompute();
+
+        self.headroom = headroom_for(&self.current, rate as f32);
+        self.headroom_target = headroom_for(&self.target, rate as f32);
+        self.headroom_step = match self.frames_left {
+            0 => 0.,
+            left => (self.headroom_target - self.headroom) / left as f32,
+        };
+        self.scale = decibels_to_scale(self.headroom);
     }
 
     fn recompute(&mut self) {
@@ -324,15 +402,23 @@ impl<I: Source> Equalized<I> {
     /// Once per frame: picks up a new target and moves one step toward it.
     fn advance(&mut self) {
         let generation = self.equalizer.generation();
-        if generation != self.seen {
+        let bit_perfect = crate::audio::exclusive_active();
+        if generation != self.seen || bit_perfect != self.bit_perfect {
             self.seen = generation;
-            let target = self.equalizer.effective();
+            self.bit_perfect = bit_perfect;
+            let target = match bit_perfect {
+                true => [0.; BANDS],
+                false => self.equalizer.effective(),
+            };
             if target != self.target {
                 self.target = target;
                 self.frames_left = self.ramp_frames;
                 for ((step, goal), now) in self.step.iter_mut().zip(target).zip(self.current) {
                     *step = (goal - now) / self.ramp_frames as f32;
                 }
+                self.headroom_target = headroom_for(&target, self.rate as f32);
+                self.headroom_step =
+                    (self.headroom_target - self.headroom) / self.ramp_frames as f32;
             }
         }
 
@@ -341,13 +427,18 @@ impl<I: Source> Equalized<I> {
         }
         self.frames_left -= 1;
         match self.frames_left {
-            0 => self.current = self.target,
+            0 => {
+                self.current = self.target;
+                self.headroom = self.headroom_target;
+            }
             _ => {
                 for (now, step) in self.current.iter_mut().zip(self.step) {
                     *now += step;
                 }
+                self.headroom += self.headroom_step;
             }
         }
+        self.scale = decibels_to_scale(self.headroom);
         self.recompute();
     }
 }
@@ -372,6 +463,7 @@ impl<I: Source> Iterator for Equalized<I> {
                     .fold(sample, |x, (coefficients, delay)| {
                         delay.run(coefficients, x)
                     })
+                    * self.scale
             }
             false => sample,
         };

@@ -1,4 +1,4 @@
-use gpui::{App, Context, Entity, Task};
+use gpui::{App, Context, Entity, Hsla, Task};
 use state::{AppSettings, Playback, Queue, Reloaded, Sonora};
 use ui::{ActiveTheme as _, CoverPalette, Look, Theme, ThemeKind};
 
@@ -19,6 +19,8 @@ pub struct Adaptive {
     painted: CoverPalette,
     /// The kind last applied from here, since the theme itself does not carry one.
     worn: Option<ThemeKind>,
+    /// The cover accent the theme is wearing, `None` while the accent is not following covers.
+    accent_worn: Option<Hsla>,
     ahead: Option<Ahead>,
     task: Option<Task<()>>,
 }
@@ -58,6 +60,7 @@ impl Adaptive {
             cover: None,
             painted: CoverPalette::default(),
             worn: None,
+            accent_worn: None,
             ahead: None,
             task: None,
         };
@@ -80,10 +83,11 @@ impl Adaptive {
     /// Resamples the cover and hands the palette to the theme. `instant` skips the fade, for
     /// a change that is not a track change.
     fn sync(&mut self, instant: bool, cx: &mut Context<Self>) {
-        let cover = self
-            .settings
-            .read(cx)
-            .cover_tint(self.fullscreen)
+        let sampling = {
+            let settings = self.settings.read(cx);
+            settings.cover_tint(self.fullscreen) || settings.cover_accent()
+        };
+        let cover = sampling
             .then(|| {
                 self.playback
                     .read(cx)
@@ -144,27 +148,50 @@ impl Adaptive {
     fn apply(&mut self, palette: CoverPalette, instant: bool, cx: &mut App) {
         let kind = self.kind(cx);
         let theme = *cx.theme();
+        let settings = Sonora::global(cx).settings.clone();
+        let (base, tinting, accenting) = {
+            let settings = settings.read(cx);
+            (
+                settings.look(),
+                settings.cover_tint(self.fullscreen),
+                settings.cover_accent(),
+            )
+        };
+        let tint = match tinting {
+            true => palette.primary,
+            false => base.tint,
+        };
+        let tint_secondary = match tinting {
+            true => palette.secondary,
+            false => base.tint_secondary,
+        };
+        let accent = match accenting {
+            true => palette.primary,
+            false => None,
+        };
         if self.worn == Some(kind)
-            && theme.tint == palette.primary
-            && theme.tint_secondary == palette.secondary
+            && theme.tint == tint
+            && theme.tint_secondary == tint_secondary
+            && self.accent_worn == accent
         {
             return;
         }
         self.worn = Some(kind);
         self.painted = palette;
+        self.accent_worn = accent;
 
-        let settings = Sonora::global(cx).settings.clone();
-        let (look, overrides) = {
-            let settings = settings.read(cx);
-            (
-                Look {
-                    kind,
-                    tint: palette.primary,
-                    tint_secondary: palette.secondary,
-                    ..settings.look()
-                },
-                settings.theme_overrides(),
-            )
+        let overrides = {
+            let overrides = settings.read(cx).theme_overrides();
+            match accent.and_then(ui::cover_accent) {
+                Some(overlay) => overrides.merged(&overlay),
+                None => overrides,
+            }
+        };
+        let look = Look {
+            kind,
+            tint,
+            tint_secondary,
+            ..base
         };
 
         match instant {

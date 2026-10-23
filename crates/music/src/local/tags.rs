@@ -15,11 +15,33 @@ use lofty::tag::{ItemValue, Tag, TagItem};
 
 use crate::engine::Loudness;
 use crate::lyrics::lrc;
-use crate::{Lyrics, LyricsLine, LyricsWord, TrackTags, Voice};
+use crate::{AudioInfo, Lyrics, LyricsLine, LyricsWord, TrackTags, Voice};
 
 use super::wire;
 
 const BREAKS: [char; 2] = ['\n', '\r'];
+
+/// Reads a local file's real audio properties off its own bytes, for display, never for
+/// playback: the decoder picks its own path independently of this.
+pub fn audio_info(path: &Path) -> Option<AudioInfo> {
+    let size_bytes = std::fs::metadata(path).ok()?.len();
+    let format = path
+        .extension()
+        .map(|extension| extension.to_string_lossy().to_uppercase())
+        .unwrap_or_else(|| "?".to_owned());
+    let tagged = Probe::open(path).ok()?.read().ok()?;
+    let properties = tagged.properties();
+
+    Some(AudioInfo {
+        format,
+        sample_rate: properties.sample_rate(),
+        bit_depth: properties.bit_depth(),
+        channels: properties.channels(),
+        bitrate_kbps: properties.audio_bitrate(),
+        size_bytes,
+        path: path.display().to_string(),
+    })
+}
 
 pub fn read(path: &Path) -> Result<TrackTags> {
     let tagged = Probe::open(path)

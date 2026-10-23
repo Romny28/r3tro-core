@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use rodio::Source as _;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use crate::audio::{Chain, Volume};
+use crate::audio::{Chain, Volume, exclusive_for};
 use crate::sink::{Cue, Paced, packet, watch_for_output};
 use crate::spectrum::Spectrum;
 use crate::{PlaybackConfig, PlaybackEvent, PlaybackEvents, Player};
@@ -817,7 +817,9 @@ fn audio_loop<F: Fetch>(
         // output reopens under it
         let refitting = current
             .as_ref()
-            .is_some_and(|held| !paced.fits(held.rate) && !paced.drained());
+            .is_some_and(|held| {
+                !paced.fits(held.rate, exclusive_for(fetch.name())) && !paced.drained()
+            });
         // anything but decoding means waiting for work rather than spinning: no
         // track, a paused one, or a full queue. A restored track sits paused
         // with an empty queue, which the old condition mistook for decoding.
@@ -883,7 +885,7 @@ fn audio_loop<F: Fetch>(
                     written = 0;
                     current = Playing::open(fetch.as_ref(), &id, loaded, at, 0, normalise);
                     if let Some(held) = &current
-                        && paced.fit(held.rate).is_err()
+                        && paced.fit(held.rate, exclusive_for(fetch.name())).is_err()
                     {
                         return;
                     }
@@ -975,11 +977,15 @@ fn audio_loop<F: Fetch>(
             continue;
         }
 
+        match playing {
+            true => paced.active(),
+            false => paced.release_idle(),
+        }
         let Some(held) = &mut current else { continue };
         if idle {
             continue;
         }
-        if paced.fit(held.rate).is_err() {
+        if paced.fit(held.rate, exclusive_for(fetch.name())).is_err() {
             return;
         }
 

@@ -17,7 +17,7 @@ use ui::{
 };
 
 use crate::chrome::SidebarRight;
-use crate::shared::menus::ItemMenu;
+use crate::shared::menus::{ItemMenu, lyrics_options, upward};
 use crate::shared::transport::{NOTCH, like, moved, percent, transport, volume_icon};
 
 const SEEK_MAX: f32 = 560.;
@@ -32,6 +32,7 @@ pub(crate) struct PlayerBar {
     settings: Entity<AppSettings>,
     track_menu: ItemMenu,
     context_menu: Option<(music::Track, Point<Pixels>)>,
+    lyrics_menu: Option<Point<Pixels>>,
     seek: ScrubberState,
     volume: ScrubberState,
     pending: Option<f32>,
@@ -59,6 +60,7 @@ impl PlayerBar {
             settings,
             track_menu: ItemMenu::new(playlist_scrollbar, cx),
             context_menu: None,
+            lyrics_menu: None,
             seek: ScrubberState::new("seek"),
             volume: ScrubberState::new("volume"),
             pending: None,
@@ -213,12 +215,21 @@ impl PlayerBar {
             .flex_none()
             .items_center()
             .gap_1()
-            .child(button(
-                "player-lyrics",
-                "icons/mic-vocal.svg",
-                "lyrics-title",
-                SideTab::Lyrics,
-            ))
+            .child(
+                button(
+                    "player-lyrics",
+                    "icons/mic-vocal.svg",
+                    "lyrics-title",
+                    SideTab::Lyrics,
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                        this.lyrics_menu = Some(upward(event.position));
+                        cx.notify();
+                    }),
+                ),
+            )
             .child(button(
                 "player-queue",
                 "icons/list-music.svg",
@@ -451,6 +462,13 @@ impl Render for PlayerBar {
             ))
         });
 
+        let lyrics_menu = self.lyrics_menu.map(|position| {
+            Popup::new(position, lyrics_options(cx)).on_close(cx.listener(|this, _, _, cx| {
+                this.lyrics_menu = None;
+                cx.notify();
+            }))
+        });
+
         let content = match stacked {
             true => base
                 .flex_col()
@@ -506,6 +524,8 @@ impl Render for PlayerBar {
                 ),
         };
 
-        content.when_some(context_menu, |this, menu| this.child(menu))
+        content
+            .when_some(context_menu, |this, menu| this.child(menu))
+            .when_some(lyrics_menu, |this, menu| this.child(menu))
     }
 }

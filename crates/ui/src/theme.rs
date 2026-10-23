@@ -87,6 +87,7 @@ pub struct Look {
 pub enum ThemeKind {
     System,
     Dark,
+    Oled,
     Light,
     Midnight,
     Forest,
@@ -97,9 +98,10 @@ pub enum ThemeKind {
 }
 
 impl ThemeKind {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::System,
         Self::Dark,
+        Self::Oled,
         Self::Light,
         Self::Midnight,
         Self::Forest,
@@ -113,6 +115,7 @@ impl ThemeKind {
         match self {
             Self::System => "system",
             Self::Dark => "dark",
+            Self::Oled => "oled",
             Self::Light => "light",
             Self::Midnight => "midnight",
             Self::Forest => "forest",
@@ -127,6 +130,7 @@ impl ThemeKind {
         match self {
             Self::System => t!("theme-system"),
             Self::Dark => t!("theme-dark"),
+            Self::Oled => t!("theme-oled"),
             Self::Light => t!("theme-light"),
             Self::Midnight => t!("theme-midnight"),
             Self::Forest => t!("theme-forest"),
@@ -141,6 +145,7 @@ impl ThemeKind {
         match id {
             "system" => Self::System,
             "light" => Self::Light,
+            "oled" => Self::Oled,
             "midnight" => Self::Midnight,
             "forest" => Self::Forest,
             "ocean" => Self::Ocean,
@@ -523,6 +528,28 @@ impl Theme {
         }
     }
 
+    pub fn oled() -> Self {
+        let mut theme = Self::dark();
+        theme.background = rgb(0x000000).into();
+        theme.sidebar = rgb(0x000000).into();
+        theme.muted = rgb(0x0f0f0f).into();
+        theme.secondary = rgb(0x080808).into();
+        theme.popover = rgb(0x050505).into();
+        theme.border = rgba(0x2a2a2a99).into();
+        theme.sidebar_border = rgb(0x151515).into();
+        theme.title_bar_border = rgb(0x151515).into();
+        theme.table_head = rgba(0x000000e6).into();
+        theme.table_row_border = rgba(0x1a1a1ab3).into();
+        theme.primary = rgb(0x3df5c2).into();
+        theme.primary_foreground = rgb(0x06100d).into();
+        theme.primary_hover = rgba(0x3df5c2b3).into();
+        theme.progress_bar = rgb(0x3df5c2).into();
+        theme.selection = rgb(0x0f8f73).into();
+        theme.table_active = rgba(0x3df5c233).into();
+        theme.table_active_border = rgb(0x3df5c2).into();
+        theme
+    }
+
     pub fn midnight() -> Self {
         Self {
             background: rgb(0x07111f).into(),
@@ -725,6 +752,7 @@ impl Theme {
         match kind {
             ThemeKind::System | ThemeKind::Dark => Self::dark(),
             ThemeKind::Light => Self::light(),
+            ThemeKind::Oled => Self::oled(),
             ThemeKind::Midnight => Self::midnight(),
             ThemeKind::Forest => Self::forest(),
             ThemeKind::Ocean => Self::ocean(),
@@ -1124,6 +1152,46 @@ fn wash(base: Hsla, tint: Hsla, strength: f32) -> Hsla {
         l: base.l,
         a: base.a,
     }
+}
+
+/// The colours an accent given as `#rrggbb` repaints: buttons, progress and selections. Text on
+/// the accent turns dark on a light accent and white on a dark one.
+pub fn accent_overlay(accent: &str) -> Option<ThemeOverrides> {
+    let digits = accent.trim().strip_prefix('#')?;
+    if digits.len() != 6 {
+        return None;
+    }
+    let value = u32::from_str_radix(digits, 16).ok()?;
+    let (red, green, blue) = ((value >> 16) & 255, (value >> 8) & 255, value & 255);
+    let luma = (0.299 * red as f32 + 0.587 * green as f32 + 0.114 * blue as f32) / 255.;
+    let on_accent = if luma > 0.55 { "#06100D" } else { "#FFFFFF" };
+
+    Some(ThemeOverrides {
+        primary: Some(format!("#{digits}")),
+        primary_foreground: Some(on_accent.to_owned()),
+        primary_hover: Some(format!("#{digits}B3")),
+        progress_bar: Some(format!("#{digits}")),
+        selection: Some(format!("#{digits}55")),
+        table_active: Some(format!("#{digits}33")),
+        table_active_border: Some(format!("#{digits}")),
+        ..ThemeOverrides::default()
+    })
+}
+
+/// The accent a cover's main colour makes, lifted so it still reads on a dark field.
+pub fn cover_accent(color: Hsla) -> Option<ThemeOverrides> {
+    let lifted = Hsla {
+        s: color.s.max(0.45),
+        l: color.l.clamp(0.55, 0.8),
+        ..color
+    };
+    let rgba = lifted.to_rgb();
+    accent_overlay(&format!(
+        "#{:02X}{:02X}{:02X}",
+        (rgba.r * 255.).round() as u8,
+        (rgba.g * 255.).round() as u8,
+        (rgba.b * 255.).round() as u8
+    ))
 }
 
 fn parse_color(value: &str) -> Option<Hsla> {

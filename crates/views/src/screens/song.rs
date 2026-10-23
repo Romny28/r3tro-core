@@ -174,7 +174,9 @@ impl SongView {
     }
 
     fn overview(&self, track: &Track, cx: &Context<Self>) -> AnyElement {
-        let album = self.detail.read(cx).album();
+        let detail = self.detail.read(cx);
+        let album = detail.album();
+        let local_tags = detail.local_tags();
         let album_name = album
             .map(|detail| detail.album.name.clone())
             .unwrap_or_else(|| track.album.clone());
@@ -182,12 +184,20 @@ impl SongView {
             .map(|detail| detail.album.release_date.clone())
             .unwrap_or_default();
         let release = match release.is_empty() {
-            true => t!("common-unknown"),
+            true => match local_tags.map(|tags| tags.year.trim()) {
+                Some(year) if !year.is_empty() => SharedString::from(year.to_owned()),
+                _ => t!("common-unknown"),
+            },
             false => release_date_label(&release),
         };
         let label = album
             .map(|detail| detail.album.label.clone())
             .filter(|value| !value.is_empty())
+            .or_else(|| {
+                local_tags
+                    .map(|tags| tags.publisher.trim().to_owned())
+                    .filter(|value| !value.is_empty())
+            })
             .map(SharedString::from)
             .unwrap_or_else(|| t!("common-not-provided"));
         let number = match (track.disc_number, track.track_number) {
@@ -380,6 +390,51 @@ impl SongView {
             .into_any_element()
     }
 
+    fn audio_facts(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let info = self.detail.read(cx).audio_info()?.clone();
+        let bit_perfect = music::exclusive_active();
+
+        let depth = match info.bit_depth {
+            Some(bits) => format!("{bits} bit"),
+            None => t!("common-not-available").to_string(),
+        };
+        let rate = match info.sample_rate {
+            Some(hz) => format!("{:.1} kHz", hz as f32 / 1000.),
+            None => t!("common-not-available").to_string(),
+        };
+        let bitrate = match info.bitrate_kbps {
+            Some(kbps) => format!("{kbps} kbps"),
+            None => t!("common-not-available").to_string(),
+        };
+        let size = human_size(info.size_bytes);
+        let status = match bit_perfect {
+            true => t!("song-bit-perfect-on"),
+            false => t!("song-bit-perfect-off"),
+        };
+
+        let facts = [
+            (t!("song-audio-format"), SharedString::from(info.format)),
+            (t!("song-audio-rate"), SharedString::from(rate)),
+            (t!("song-audio-depth"), SharedString::from(depth)),
+            (t!("song-audio-bitrate"), SharedString::from(bitrate)),
+            (t!("song-audio-size"), SharedString::from(size)),
+            (t!("song-audio-status"), status),
+            (t!("song-audio-path"), SharedString::from(info.path)),
+        ];
+
+        Some(
+            InfoCard::new(t!("song-audio"))
+                .child(
+                    div().flex().flex_col().children(
+                        facts.into_iter().enumerate().map(|(index, (name, value))| {
+                            Fact::new(name, value).striped(index % 2 == 1)
+                        }),
+                    ),
+                )
+                .into_any_element(),
+        )
+    }
+
     fn loading(&self, cx: &Context<Self>) -> AnyElement {
         let theme = *cx.theme();
         let line = || Skeleton::new().w_full().h(theme.metrics.pad);
@@ -556,7 +611,8 @@ impl Render for SongView {
                                             .flex_col()
                                             .gap_5()
                                             .child(self.credits(&track, cx))
-                                            .child(self.discovery(&track, cx)),
+                                            .child(self.discovery(&track, cx))
+                                            .children(self.audio_facts(cx)),
                                     ),
                             )
                             .when_some(self.artist_profile(cx), |this, profile| {
@@ -583,5 +639,16 @@ impl Render for SongView {
             )
             .children(self.menu(cx))
             .children(self.about_dialog(cx))
+    }
+}
+
+/// A byte count as whichever unit reads best: MB for most files, GB for the rare very large one.
+fn human_size(bytes: u64) -> String {
+    const MB: f64 = 1024. * 1024.;
+    const GB: f64 = MB * 1024.;
+    let bytes = bytes as f64;
+    match bytes >= GB {
+        true => format!("{:.2} GB", bytes / GB),
+        false => format!("{:.1} MB", bytes / MB),
     }
 }

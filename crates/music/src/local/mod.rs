@@ -10,6 +10,20 @@ mod wire;
 
 pub use lyrics::LocalLyrics;
 
+use crate::{AudioInfo, TrackTags};
+
+/// A local track's real audio properties, read straight off its file by its track id.
+pub fn audio_info(id: &str) -> Option<AudioInfo> {
+    tags::audio_info(wire::path_from_track_id(id)?)
+}
+
+/// A local track's own tags (year, genre, publisher…), read straight off its file by its track
+/// id. The catalogue-style facts a streaming track carries — release date, label, genres — have
+/// no equivalent for a local file beyond what its own tags say.
+pub fn track_tags(id: &str) -> Option<TrackTags> {
+    tags::read(wire::path_from_track_id(id)?).ok()
+}
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

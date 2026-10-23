@@ -5,6 +5,9 @@ use gpui::{App, AssetSource, SharedString};
 
 include!(concat!(env!("OUT_DIR"), "/fonts.rs"));
 
+pub const LOGO: &str = "brand/r3tro-logo.svg";
+const LOGO_SVG: &[u8] = include_bytes!("../../../assets/brand/r3tro-logo.svg");
+
 pub struct Assets;
 
 impl Assets {
@@ -20,6 +23,9 @@ impl Assets {
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        if path == LOGO {
+            return Ok(Some(Cow::Borrowed(LOGO_SVG)));
+        }
         if let Some(bytes) = icons::asset(path) {
             return Ok(Some(Cow::Borrowed(bytes)));
         }

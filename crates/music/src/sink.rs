@@ -25,6 +25,8 @@ const DRAIN_POLL: Duration = Duration::from_millis(10);
 const DEVICE_POLL: Duration = Duration::from_millis(500);
 /// How often a watch looks for an output device to come back once none could be opened.
 const WATCH_POLL: Duration = Duration::from_secs(1);
+/// How long nothing has played before an exclusive output lets go of the device.
+const RELEASE_AFTER: Duration = Duration::from_secs(5);
 
 /// What the cue does with the next write. It rides in an `AtomicU8`, so it converts at that
 /// boundary and stays a type everywhere else.
@@ -211,6 +213,7 @@ pub struct Paced {
     live: Arc<AtomicUsize>,
     changed: UnboundedSender<()>,
     checked_at: Instant,
+    idle_since: Option<Instant>,
 }
 
 impl Paced {
@@ -225,6 +228,7 @@ impl Paced {
             live: Arc::default(),
             changed,
             checked_at: Instant::now(),
+            idle_since: None,
         })
     }
 
@@ -273,19 +277,34 @@ impl Paced {
     }
 
     /// Whether packets at `rate` can go out without the output reopening.
-    pub fn fits(&self, rate: u32) -> bool {
-        self.output.fits(rate)
+    pub fn fits(&self, rate: u32, exclusive: bool) -> bool {
+        self.output.fits(rate, exclusive)
     }
 
     /// Reopens the output for packets at `rate` unless it fits already. Anything still queued
     /// is dropped, so a caller that wants the tail heard waits for `drained` first.
-    pub fn fit(&mut self, rate: u32) -> Result<(), Gone> {
-        match self.output.fit(rate) {
+    pub fn fit(&mut self, rate: u32, exclusive: bool) -> Result<(), Gone> {
+        match self.output.fit(rate, exclusive) {
             Ok(_) => Ok(()),
             Err(error) => {
                 log::error!("sink: cannot reopen the audio output: {error:#}");
                 Err(self.disconnected())
             }
+        }
+    }
+
+    /// Marks the output as in use, so the idle clock starts over.
+    pub fn active(&mut self) {
+        self.idle_since = None;
+    }
+
+    /// Called while nothing plays: after a few seconds an exclusive output lets go of the
+    /// device so games and browsers can use it. Playing again reopens it.
+    pub fn release_idle(&mut self) {
+        let since = *self.idle_since.get_or_insert_with(Instant::now);
+        if since.elapsed() >= RELEASE_AFTER && self.output.exclusive() {
+            log::info!("sink: letting go of the exclusive output while idle");
+            self.output.release();
         }
     }
 

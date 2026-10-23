@@ -3,21 +3,25 @@ use std::rc::Rc;
 use ui::{
     ActiveTheme as _, Button, Card, Deck, DraggedPin, Edge, MenuItem, Panel, Picker, Pin,
     Pinnable as _, Popup, SNUG, Scroller, Shield, Side, Spot, Tabs, Text, Vacancy, drop_gap,
-    drop_marker,
+    drop_marker, Avatar, Initials,
 };
 
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, DragMoveEvent, ElementId, Entity, Hsla, MouseButton, MouseDownEvent,
-    Pixels, Point, Render, ScrollHandle, svg,
+    Pixels, Point, Render, ScrollHandle, FontWeight, svg,
 };
 use gpui::{Window, div, px};
 use router::{
     Destination, LibraryTab, NavEntry, Navigation, NavigationEvent, SettingsTab, navigate,
 };
-use state::{AppSettings, Library, Origin, PinSort, Pins, Playback, Session, Shelf, Sonora};
+use state::{
+    AppSettings, Library, Origin, PinSort, Pins, Playback, Session, SessionState, Shelf, Sonora,
+};
 
 use crate::shared::menus::{ItemMenu, item_menu};
+
+const LOGO: &str = "brand/r3tro-logo.svg";
 
 /// The one drag list the pinned section keeps, so a pin dropped anywhere in it lands in order.
 const PINS: &str = "sidebar-pins";
@@ -660,6 +664,7 @@ impl Render for SidebarLeft {
             .when(overlaid, |this| {
                 this.occlude().absolute().left_0().top_0().bottom_0()
             })
+            .child(brand(cx))
             .child(
                 div()
                     .relative()
@@ -683,6 +688,7 @@ impl Render for SidebarLeft {
                     )
                     .children(ui::return_top("sidebar-return-top", &self.scrollbar, cx)),
             )
+            .child(profile_card(cx))
             .children(self.menu(cx));
 
         match overlaid {
@@ -709,6 +715,103 @@ impl Render for SidebarLeft {
                 .into_any_element(),
         }
     }
+}
+
+fn brand(cx: &App) -> impl IntoElement {
+    let theme = *cx.theme();
+
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_2()
+        .px_4()
+        .pt_3()
+        .pb_1()
+        .child(
+            svg()
+                .path(LOGO)
+                .size(px(24.))
+                .flex_none()
+                .text_color(theme.primary),
+        )
+        .child(
+            div()
+                .flex()
+                .gap_1()
+                .text_size(theme.text(Text::Large))
+                .text_color(theme.foreground)
+                .child(div().font_weight(FontWeight::MEDIUM).child("R3TRØ"))
+                .child(div().font_weight(FontWeight::BOLD).child("CORE")),
+        )
+}
+
+fn profile_card(cx: &App) -> impl IntoElement {
+    let theme = *cx.theme();
+    let sonora = Sonora::global(cx);
+    let (name, avatar, greeting) = {
+        let settings = sonora.settings.read(cx);
+        (
+            settings.profile_name().to_owned(),
+            settings.profile_avatar().to_owned(),
+            settings.profile_greeting().to_owned(),
+        )
+    };
+    let account = match sonora.session.read(cx).state() {
+        SessionState::SignedIn(profile) => Some(profile.display_name.to_string()),
+        _ => None,
+    };
+    let shown = match name.is_empty() {
+        false => name,
+        true => account.unwrap_or_else(|| "R3TRØ".to_owned()),
+    };
+    let caption = match greeting.is_empty() {
+        false => greeting,
+        true => i18n::lookup("sidebar-profile-local", None)
+            .to_string()
+            .to_uppercase(),
+    };
+
+    div()
+        .id("sidebar-profile")
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_3()
+        .mx_3()
+        .mb_3()
+        .p_2()
+        .rounded(theme.radius)
+        .bg(theme.secondary)
+        .cursor_pointer()
+        .hover(|style| style.bg(theme.secondary_hover))
+        .on_click(|_, _, cx| navigate(Destination::Settings(SettingsTab::General), cx))
+        .child(match avatar.is_empty() {
+            true => Initials::new(shown.clone(), px(36.)).into_any_element(),
+            false => Avatar::new(Some(format!("file://{avatar}")))
+                .size(px(36.))
+                .into_any_element(),
+        })
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .min_w_0()
+                .child(
+                    div()
+                        .truncate()
+                        .text_size(theme.text(Text::Small))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(shown),
+                )
+                .child(
+                    div()
+                        .truncate()
+                        .text_size(theme.text(Text::Tiny))
+                        .text_color(theme.muted_foreground)
+                        .child(caption),
+                ),
+        )
 }
 
 /// The kind of an entry, behind a dimmed pin when it is one of the pinned ones.

@@ -18,6 +18,7 @@ mod models;
 pub mod musixmatch;
 pub mod netease;
 pub mod potoken;
+pub mod profanity;
 pub mod progress;
 pub mod scrobble;
 mod sink;
@@ -41,13 +42,14 @@ use time::format_description::well_known::Iso8601;
 use time::parsing::Parsed;
 use time::{Month, OffsetDateTime};
 
+pub use audio::{ExclusiveMode, exclusive_active, set_exclusive_mode};
 pub use equalizer::Equalizer;
 pub use models::{
     Album, AlbumCatalogue, AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, ArtistRef,
-    Contributor, Credit, Genre, GenreDetail, GenreItem, GenreSection, HomeFeed, Lyrics, LyricsHit,
-    LyricsLane, LyricsLine, LyricsQuery, LyricsWord, PinOutcome, PinTarget, PinTargetKind,
-    Playlist, PlaylistDetail, ReleaseType, RomanizedText, SavedArtist, Track, TrackKey, TrackTags,
-    UserDetail, UserProfile, Voice, WritingSystem,
+    AudioInfo, Contributor, Credit, Genre, GenreDetail, GenreItem, GenreSection, HomeFeed, Lyrics,
+    LyricsHit, LyricsLane, LyricsLine, LyricsQuery, LyricsWord, PinOutcome, PinTarget,
+    PinTargetKind, Playlist, PlaylistDetail, ReleaseType, RomanizedText, SavedArtist, Track,
+    TrackKey, TrackTags, UserDetail, UserProfile, Voice, WritingSystem,
 };
 pub use spectrum::Spectrum;
 
