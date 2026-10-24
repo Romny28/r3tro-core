@@ -7,6 +7,8 @@ include!(concat!(env!("OUT_DIR"), "/fonts.rs"));
 
 pub const LOGO: &str = "brand/r3tro-logo.svg";
 const LOGO_SVG: &[u8] = include_bytes!("../../../assets/brand/r3tro-logo.svg");
+/// Where About asks for the app icon. R3TRØ CORE answers with its own logo on every platform.
+const APP_ICON: &str = "brand/sonora.svg";
 
 pub struct Assets;
 
@@ -23,7 +25,7 @@ impl Assets {
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        if path == LOGO {
+        if path == LOGO || path == APP_ICON {
             return Ok(Some(Cow::Borrowed(LOGO_SVG)));
         }
         if let Some(bytes) = icons::asset(path) {

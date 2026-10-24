@@ -35,7 +35,7 @@ impl SongDetail {
                 this.clear();
                 cx.notify();
             }
-            SessionEvent::Reconnected => {}
+            SessionEvent::Reconnected | SessionEvent::WentOffline => {}
             SessionEvent::LocalChanged => {
                 if let Some(id) = this.id.clone().filter(|id| music::is_local_id(id)) {
                     this.clear();
@@ -115,10 +115,30 @@ impl SongDetail {
             cx.notify();
             return;
         }
+        self.load(id.to_owned(), false, cx);
+    }
+
+    /// Drops the page and fetches it again from the provider, past the catalog cache, so it
+    /// shows its loading state until the new one lands.
+    pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.id.clone() else {
+            return;
+        };
+        self.clear();
+        self.id = Some(id.clone());
+        self.load(id, true, cx);
+    }
+
+    /// Fetches the song page. A `fresh` load drops the cached page first, so the provider is
+    /// asked again.
+    fn load(&mut self, id: String, fresh: bool, cx: &mut Context<Self>) {
+        let Some(catalog) = self.session.read(cx).catalog(&id) else {
+            cx.notify();
+            return;
+        };
 
         self.loading = true;
         cx.notify();
-        let id = id.to_owned();
         if music::is_local_id(&id) {
             let probed = id.clone();
             let probed_for = id.clone();
@@ -143,7 +163,12 @@ impl SongDetail {
         }
         let request = self.io.spawn({
             let id = id.clone();
-            async move { catalog.song(&id).await }
+            async move {
+                if fresh {
+                    catalog.invalidate_song(&id).await;
+                }
+                catalog.song(&id).await
+            }
         });
         self.request = Some(request.abort_handle());
         self.task = Some(cx.spawn(async move |this, cx| {
