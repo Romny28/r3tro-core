@@ -60,7 +60,12 @@ const SOURCE_URL: &str = "https://github.com/sonorahq/sonora";
 const THEMES: &str = "themes";
 const PACKS: &str = "packs";
 const CORNERS: &str = "corners";
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "macos"
+))]
 const WINDOW_ROUNDING: &str = "window-rounding";
 const FULLSCREEN_CONTROLS_AUTOHIDE: &str = "fullscreen-controls-autohide";
 const EXCLUSIVE_MODE: &str = "exclusive-mode";
@@ -168,13 +173,18 @@ enum Slot {
     Saver,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     ServerSideDecorations,
-    #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     Decorations,
     #[cfg(not(target_os = "macos"))]
     Side,
     #[cfg(not(target_os = "macos"))]
     TrafficLights,
-    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "macos"
+    ))]
     WindowRounding,
     AdaptiveMenu,
     Normalisation,
@@ -810,7 +820,7 @@ impl SettingsView {
                 t!("settings-server-side-decorations"),
                 t!("settings-server-side-decorations-detail"),
             ),
-            #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+            #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
             Slot::Decorations => (
                 t!("settings-window-controls"),
                 t!("settings-window-controls-detail"),
@@ -825,7 +835,12 @@ impl SettingsView {
                 t!("settings-traffic-light-controls"),
                 t!("settings-traffic-light-controls-detail"),
             ),
-            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+            #[cfg(any(
+                target_os = "windows",
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "macos"
+            ))]
             Slot::WindowRounding => (
                 t!("settings-window-rounding"),
                 t!("settings-window-rounding-detail"),
@@ -1051,13 +1066,18 @@ impl SettingsView {
             Slot::Saver => self.saver_row(cx).element,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             Slot::ServerSideDecorations => self.server_side_decorations_row(cx).element,
-            #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+            #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
             Slot::Decorations => self.decorations_row(cx).element,
             #[cfg(not(target_os = "macos"))]
             Slot::Side => self.side_row(cx).element,
             #[cfg(not(target_os = "macos"))]
             Slot::TrafficLights => self.traffic_light_controls_row(cx).element,
-            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+            #[cfg(any(
+                target_os = "windows",
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "macos"
+            ))]
             Slot::WindowRounding => self.window_rounding_row(cx).element,
             Slot::AdaptiveMenu => self.adaptive_menu_row(cx).element,
             Slot::Normalisation => self.playback_row(cx).element,
@@ -1104,7 +1124,7 @@ impl SettingsView {
 
     #[allow(
         unused_variables,
-        reason = "cx is unused on macOS, no slots are listed there"
+        reason = "cx is only read on Linux and FreeBSD, where rounding follows the decorations"
     )]
     fn decoration_slots(&self, cx: &App) -> Vec<Slot> {
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -1129,7 +1149,11 @@ impl SettingsView {
             Slot::WindowRounding,
         ];
         #[cfg(target_os = "macos")]
-        let slots = Vec::<Slot>::new();
+        let slots = vec![
+            Slot::Title("settings-group-window-style"),
+            Slot::Decorations,
+            Slot::WindowRounding,
+        ];
         slots
     }
 
@@ -1595,7 +1619,7 @@ impl SettingsView {
         )
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     fn decorations_row(&self, cx: &mut Context<Self>) -> Setting {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
@@ -1638,7 +1662,12 @@ impl SettingsView {
         )
     }
 
-    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "macos"
+    ))]
     fn window_rounding_row(&self, cx: &mut Context<Self>) -> Setting {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
@@ -1647,16 +1676,24 @@ impl SettingsView {
 
         let picker = Picker::new(WINDOW_ROUNDING, &self.popovers, current.label())
             .width(Picker::NARROW)
-            .items(Rounding::ALL.into_iter().map(|rounding| {
-                MenuItem::new(rounding.id(), rounding.label())
-                    .selected(current == rounding)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.settings.update(cx, |settings, cx| {
-                            settings.set_window_rounding(rounding, cx)
-                        });
-                        cx.notify();
-                    }))
-            }));
+            // AppKit has no square window, so macOS offers only the corners it can draw.
+            .items(
+                Rounding::ALL
+                    .into_iter()
+                    .filter(|rounding| {
+                        cfg!(not(target_os = "macos")) || *rounding != Rounding::Square
+                    })
+                    .map(|rounding| {
+                        MenuItem::new(rounding.id(), rounding.label())
+                            .selected(current == rounding)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.settings.update(cx, |settings, cx| {
+                                    settings.set_window_rounding(rounding, cx)
+                                });
+                                cx.notify();
+                            }))
+                    }),
+            );
 
         self.row(
             t!("settings-window-rounding"),
