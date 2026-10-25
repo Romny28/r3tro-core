@@ -89,7 +89,6 @@ pub struct Look {
 pub enum ThemeKind {
     System,
     Dark,
-    Oled,
     Light,
 }
 
@@ -100,7 +99,6 @@ impl ThemeKind {
         match self {
             Self::System => "system",
             Self::Dark => "dark",
-            Self::Oled => "oled",
             Self::Light => "light",
         }
     }
@@ -109,7 +107,6 @@ impl ThemeKind {
         match self {
             Self::System => t!("theme-system"),
             Self::Dark => t!("theme-dark"),
-            Self::Oled => t!("theme-oled"),
             Self::Light => t!("theme-light"),
         }
     }

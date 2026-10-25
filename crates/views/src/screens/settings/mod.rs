@@ -36,6 +36,7 @@ mod now_playing;
 mod playback;
 mod player_bar;
 mod preview;
+mod r3tro;
 mod rows;
 mod scrobbling;
 mod sound;
@@ -44,6 +45,7 @@ mod themes;
 
 pub use header::SettingsHeader;
 use layout::section_title;
+use r3tro::R3tro;
 pub(crate) use layout::{Layout, frame};
 pub(crate) use rows::Row;
 
@@ -148,6 +150,14 @@ enum Slot {
     Log,
     License,
     Source,
+    // R3TRØ CORE's own settings, built in r3tro.rs.
+    R3Profile,
+    R3Accent,
+    R3Exclusive,
+    R3Notice,
+    R3NoticeSeconds,
+    R3NoticePosition,
+    R3HideProfanity,
 }
 
 /// What a tab scrolls to once it is laid out.
@@ -279,6 +289,8 @@ pub struct SettingsView {
     font_task: Option<Task<()>>,
     /// What the pages' previews keep between frames.
     previews: preview::Previews,
+    /// R3TRØ CORE's own inputs, kept in r3tro.rs.
+    r3tro: R3tro,
 }
 
 impl SettingsView {
@@ -375,6 +387,7 @@ impl SettingsView {
         let popovers = Popovers::default();
         let output_picker = cx.new(|cx| OutputPicker::new(outputs.clone(), popovers.clone(), cx));
         let previews = preview::Previews::new(cx);
+        let r3tro = R3tro::new(&settings, cx);
 
         Self {
             session,
@@ -423,6 +436,7 @@ impl SettingsView {
             loading_fonts: false,
             font_task: None,
             previews,
+            r3tro,
         }
     }
 
@@ -502,7 +516,7 @@ impl SettingsView {
 
     /// The groups a page shows, in order.
     fn groups(&self, page: SettingsPage, cx: &App) -> Vec<Group> {
-        match page {
+        let mut groups = match page {
             SettingsPage::Providers => self.accounts_groups(),
             SettingsPage::Appearance => self.appearance_groups(),
             SettingsPage::PlayerBar => self.player_bar_groups(),
@@ -517,7 +531,9 @@ impl SettingsView {
             SettingsPage::About => self.about_groups(),
             SettingsPage::LyricsSources => self.lyrics_sources_groups(),
             SettingsPage::MusicFolders => self.music_folders_groups(),
-        }
+        };
+        self.r3tro_groups(page, &mut groups);
+        groups
     }
 
     /// Invalidates cached block heights after data or settings change their layout.
@@ -564,6 +580,7 @@ impl SettingsView {
                         .flex()
                         .flex_col()
                         .gap(GROUPS)
+                        .child(this.r3tro_credits(cx))
                         .child(this.team(cx))
                         .child(this.notice(cx))
                         .into_any_element()
@@ -655,6 +672,13 @@ impl SettingsView {
     )]
     fn slot_meta(&self, slot: Slot, cx: &App) -> Option<(SharedString, SharedString)> {
         let meta = match slot {
+            Slot::R3Profile
+            | Slot::R3Accent
+            | Slot::R3Exclusive
+            | Slot::R3Notice
+            | Slot::R3NoticeSeconds
+            | Slot::R3NoticePosition
+            | Slot::R3HideProfanity => return self.r3tro_meta(slot),
             Slot::Folders => return None,
             Slot::Startup => (t!("settings-startup"), t!("settings-startup-detail")),
             Slot::Entries => (t!("settings-entries"), t!("settings-entries-detail")),
@@ -893,6 +917,13 @@ impl SettingsView {
     /// Builds the slot's row or cards when its group is visible or needs measuring.
     fn slot_element(&self, slot: Slot, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         match slot {
+            Slot::R3Profile
+            | Slot::R3Accent
+            | Slot::R3Exclusive
+            | Slot::R3Notice
+            | Slot::R3NoticeSeconds
+            | Slot::R3NoticePosition
+            | Slot::R3HideProfanity => self.r3tro_row(slot, cx),
             Slot::Startup => self.startup_row(cx),
             Slot::Entries => self.entries_row(cx),
             Slot::Language => self.language_row(cx),

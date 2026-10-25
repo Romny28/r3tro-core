@@ -154,6 +154,9 @@ pub(in crate::screens::settings) fn preview(
         DiscordName::Provider => provider
             .map(|(_, _, listening)| SharedString::from(listening))
             .unwrap_or_else(|| SONORA.into()),
+        DiscordName::SonoraProvider => provider
+            .map(|(_, _, listening)| SharedString::from(format!("R3TRØ CORE - {listening}")))
+            .unwrap_or_else(|| "R3TRØ CORE".into()),
         DiscordName::Music => t!("settings-discord-preview-music"),
         DiscordName::Title => sample.title.clone(),
         DiscordName::Artist => sample.artist.clone(),
